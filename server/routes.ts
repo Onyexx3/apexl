@@ -2,10 +2,11 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth, requireAuth, requireRole, requireBranchAccess, filterByUserBranch } from "./auth";
-import { insertMemberSchema, insertTransactionSchema, insertSavingsPlanSchema, insertPlanContributionSchema, insertYearlySavingsPlanSchema, insertYearlyPlanContributionSchema, insertNotificationSchema, insertBranchSchema, insertStaffSchema, insertLoanSchema, insertInvestmentTypeSchema, insertMemberInvestmentSchema } from "@shared/schema";
+import { insertMemberSchema, insertTransactionSchema, insertSavingsPlanSchema, insertPlanContributionSchema, insertYearlySavingsPlanSchema, insertYearlyPlanContributionSchema, insertNotificationSchema, insertBranchSchema, insertStaffSchema, insertLoanSchema, insertInvestmentTypeSchema, insertMemberInvestmentSchema, insertSavingsPlanTypeSchema, insertDynamicSavingsPlanSchema } from "@shared/schema";
 import { fromZodError } from "zod-validation-error";
 import PDFDocument from "pdfkit";
 import * as XLSX from "xlsx";
+import { generateMemberPlanSummary } from "./pdf-generator";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   setupAuth(app);
@@ -1195,6 +1196,94 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(investment);
     } catch (error: any) {
       res.status(500).json({ message: error.message || "Failed to mature investment" });
+    }
+  });
+
+  // Savings Plan Types Routes
+  app.get("/api/savings-plan-types", requireAuth, async (req, res) => {
+    try {
+      const planTypes = await storage.getSavingsPlanTypes();
+      res.json(planTypes);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Failed to fetch savings plan types" });
+    }
+  });
+
+  // Dynamic Savings Plans Routes
+  app.post("/api/dynamic-savings-plans", requireAuth, async (req, res) => {
+    try {
+      const result = insertDynamicSavingsPlanSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({ message: fromZodError(result.error).message });
+      }
+
+      // Check if user has permission for this member
+      if (req.user!.role !== "admin") {
+        const member = await storage.getMember(result.data.memberId);
+        if (!member) {
+          return res.status(404).json({ message: "Member not found" });
+        }
+        
+        // Check branch access for managers and collectors
+        if (req.user!.role !== "admin" && req.user!.branchId !== member.staffId) {
+          const hasAccess = await storage.checkBranchAccess(req.user!.id, member.staffId);
+          if (!hasAccess) {
+            return res.status(403).json({ message: "You don't have permission to create plans for this member" });
+          }
+        }
+      }
+
+      const plan = await storage.createDynamicSavingsPlan(result.data);
+      
+      const member = await storage.getMember(plan.memberId);
+      if (member) {
+        await storage.createNotification({
+          type: "reminder",
+          title: "New Savings Plan Created",
+          message: `Savings plan "${plan.planName}" has been created for ${member.name}. Target: ₦${parseFloat(plan.targetAmount).toLocaleString()}.`,
+          memberId: plan.memberId,
+          read: "false",
+        });
+      }
+
+      res.status(201).json(plan);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Failed to create savings plan" });
+    }
+  });
+
+  // Investment Types Routes
+  app.get("/api/investment-types", requireAuth, async (req, res) => {
+    try {
+      const investmentTypes = await storage.getInvestmentTypes();
+      res.json(investmentTypes);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Failed to fetch investment types" });
+    }
+  });
+
+  // PDF Generation Route
+  app.post("/api/generate-plan-summary", requireAuth, async (req, res) => {
+    try {
+      const { planData, planType, memberId } = req.body;
+
+      if (!planData || !planType || !memberId) {
+        return res.status(400).json({ message: "Missing required fields: planData, planType, memberId" });
+      }
+
+      const member = await storage.getMember(memberId);
+      if (!member) {
+        return res.status(404).json({ message: "Member not found" });
+      }
+
+      const pdfBuffer = await generateMemberPlanSummary(member, planData, planType);
+      
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="plan-summary-${new Date().toISOString().split('T')[0]}.pdf"`);
+      res.send(pdfBuffer);
+    } catch (error: any) {
+      console.error("Error generating PDF:", error);
+      res.status(500).json({ message: error.message || "Failed to generate PDF" });
     }
   });
 

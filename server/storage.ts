@@ -8,6 +8,20 @@ import {
 import { db } from "./db";
 import { eq, desc, sql, lt, and } from "drizzle-orm";
 import { hashPassword } from "./auth";
+import type { 
+  Branch, Staff, Member, Transaction, SavingsPlan, PlanContribution,
+  YearlySavingsPlan, YearlyPlanContribution, Notification, WalletTransaction,
+  InvestmentType, MemberInvestment, Loan, Session,
+  // Dynamic savings plan types
+  SavingsPlanType, DynamicSavingsPlan, DynamicSavingsPlanContribution,
+  InsertSavingsPlanType, InsertDynamicSavingsPlan, InsertDynamicSavingsPlanContribution,
+  // Combined types
+  BranchWithStaff, StaffWithBranch, StaffWithMembers, MemberWithStaff,
+  MemberWithTransactions, TransactionWithMember, TransactionWithDetails,
+  SavingsPlanWithDetails, YearlySavingsPlanWithDetails,
+  DynamicSavingsPlanWithDetails, SavingsPlanTypeWithPlans,
+  LoanWithDetails, InvestmentTypeWithCreator, MemberInvestmentWithDetails
+} from "@shared/schema";
 
 export interface PaginatedResponse<T> {
   data: T[];
@@ -135,6 +149,23 @@ export interface IStorage {
   createNotification(notification: InsertNotification): Promise<Notification>;
   markNotificationAsRead(id: string): Promise<Notification>;
   getUnreadNotificationCount(): Promise<number>;
+
+  // Investment Type Management
+  getInvestmentTypes(): Promise<InvestmentType[]>;
+  getInvestmentType(id: string): Promise<InvestmentTypeWithCreator | undefined>;
+  createInvestmentType(investmentType: InsertInvestmentType): Promise<InvestmentType>;
+  updateInvestmentType(id: string, investmentType: Partial<InsertInvestmentType>): Promise<InvestmentType>;
+  deleteInvestmentType(id: string): Promise<void>;
+  getInvestmentTypesPaginated(page: number, limit: number): Promise<PaginatedResponse<InvestmentType>>;
+
+  // Member Investment Management
+  getMemberInvestmentsPaginated(page: number, limit: number, memberId?: string, investmentTypeId?: string): Promise<PaginatedResponse<MemberInvestmentWithDetails>>;
+  getMemberInvestment(id: string): Promise<MemberInvestmentWithDetails | undefined>;
+  getMemberInvestmentsByMember(memberId: string): Promise<MemberInvestmentWithDetails[]>;
+  createMemberInvestment(investment: InsertMemberInvestment): Promise<MemberInvestment>;
+  breakMemberInvestment(id: string): Promise<MemberInvestment>;
+  matureMemberInvestment(id: string): Promise<MemberInvestment>;
+  checkAndMatureInvestments(): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1370,6 +1401,10 @@ export class DatabaseStorage implements IStorage {
 
   async getActiveInvestmentTypes(): Promise<InvestmentType[]> {
     return await db.select().from(investmentTypes).where(eq(investmentTypes.status, "active")).orderBy(desc(investmentTypes.createdAt));
+  }
+
+  async getInvestmentTypes(): Promise<InvestmentType[]> {
+    return await this.getActiveInvestmentTypes();
   }
 
   async getInvestmentTypesPaginated(page: number, limit: number): Promise<PaginatedResponse<InvestmentType>> {

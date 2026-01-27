@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2, UserCheck, Building2 } from "lucide-react";
+import { Plus, Pencil, Trash2, UserCheck, Building2, Camera, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -61,6 +61,9 @@ export default function Staff() {
     name: "",
     email: "",
     phone: "",
+    username: "",
+    password: "",
+    profilePhoto: "",
     role: "collector" as "manager" | "collector" | "admin",
     status: "active" as "active" | "inactive",
   });
@@ -82,6 +85,16 @@ export default function Staff() {
     queryFn: async () => {
       const response = await fetch("/api/branches/all");
       if (!response.ok) throw new Error("Failed to fetch branches");
+      return response.json();
+    },
+  });
+
+  // Get current user to check if they're a manager
+  const { data: currentUser } = useQuery({
+    queryKey: ["/api/user"],
+    queryFn: async () => {
+      const response = await fetch("/api/user");
+      if (!response.ok) return null;
       return response.json();
     },
   });
@@ -159,16 +172,22 @@ export default function Staff() {
         name: staff.name,
         email: staff.email || "",
         phone: staff.phone || "",
+        username: staff.username || "",
+        password: "",
+        profilePhoto: staff.profilePhoto || "",
         role: staff.role as "manager" | "collector" | "admin",
         status: staff.status as "active" | "inactive",
       });
     } else {
       setSelectedStaff(null);
       setFormData({
-        branchId: "",
+        branchId: currentUser?.role === "manager" ? currentUser.branchId : "",
         name: "",
         email: "",
         phone: "",
+        username: "",
+        password: "",
+        profilePhoto: "",
         role: "collector",
         status: "active",
       });
@@ -184,6 +203,9 @@ export default function Staff() {
       name: "",
       email: "",
       phone: "",
+      username: "",
+      password: "",
+      profilePhoto: "",
       role: "collector",
       status: "active",
     });
@@ -264,8 +286,20 @@ export default function Staff() {
                     staffList?.data?.map((staff) => (
                       <TableRow key={staff.id}>
                         <TableCell className="font-medium">
-                          <div className="flex items-center gap-2">
-                            <UserCheck className="w-4 h-4 text-muted-foreground" />
+                          <div className="flex items-center gap-3">
+                            {staff.profilePhoto ? (
+                              <img
+                                src={staff.profilePhoto}
+                                alt={staff.name}
+                                className="w-8 h-8 rounded-full object-cover"
+                                onError={(e) => {
+                                  e.currentTarget.src = "";
+                                  e.currentTarget.style.display = "none";
+                                }}
+                              />
+                            ) : (
+                              <UserCheck className="w-4 h-4 text-muted-foreground" />
+                            )}
                             {staff.name}
                           </div>
                         </TableCell>
@@ -331,6 +365,7 @@ export default function Staff() {
                 <Select
                   value={formData.branchId}
                   onValueChange={(value) => setFormData({ ...formData, branchId: value })}
+                  disabled={currentUser?.role === "manager"}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select a branch" />
@@ -343,6 +378,11 @@ export default function Staff() {
                     ))}
                   </SelectContent>
                 </Select>
+                {currentUser?.role === "manager" && (
+                  <p className="text-sm text-muted-foreground">
+                    As a manager, you can only create staff in your branch.
+                  </p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="name">Full Name *</Label>
@@ -374,6 +414,64 @@ export default function Staff() {
                 />
               </div>
               <div className="space-y-2">
+                <Label htmlFor="username">Username *</Label>
+                <Input
+                  id="username"
+                  value={formData.username}
+                  onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                  placeholder="johndoe"
+                  required={!selectedStaff}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="password">
+                  Password {!selectedStaff ? "*" : "(leave blank to keep current)"}
+                </Label>
+                <Input
+                  id="password"
+                  type="password"
+                  value={formData.password}
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  placeholder="Enter password"
+                  required={!selectedStaff}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="profilePhoto">Profile Photo</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="profilePhoto"
+                    value={formData.profilePhoto}
+                    onChange={(e) => setFormData({ ...formData, profilePhoto: e.target.value })}
+                    placeholder="https://example.com/photo.jpg"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => {
+                      // TODO: Implement file upload
+                      toast({ title: "File upload coming soon" });
+                    }}
+                  >
+                    <Upload className="w-4 h-4" />
+                  </Button>
+                </div>
+                {formData.profilePhoto && (
+                  <div className="mt-2">
+                    <img
+                      src={formData.profilePhoto}
+                      alt="Profile preview"
+                      className="w-16 h-16 rounded-full object-cover"
+                      onError={(e) => {
+                        e.currentTarget.src = "";
+                        e.currentTarget.style.display = "none";
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+              <div className="space-y-2">
                 <Label htmlFor="role">Role</Label>
                 <Select
                   value={formData.role}
@@ -385,7 +483,7 @@ export default function Staff() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="collector">Collector</SelectItem>
+                    <SelectItem value="collector">Field Staff</SelectItem>
                     <SelectItem value="manager">Manager</SelectItem>
                     <SelectItem value="admin">Admin</SelectItem>
                   </SelectContent>
@@ -415,7 +513,7 @@ export default function Staff() {
               </Button>
               <Button
                 type="submit"
-                disabled={createMutation.isPending || updateMutation.isPending || !formData.branchId}
+                disabled={createMutation.isPending || updateMutation.isPending || !formData.branchId || (!selectedStaff && (!formData.username || !formData.password))}
               >
                 {createMutation.isPending || updateMutation.isPending ? "Saving..." : "Save"}
               </Button>

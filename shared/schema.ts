@@ -26,6 +26,7 @@ export const staff = pgTable("staff", {
   phone: text("phone"),
   username: text("username").unique(),
   password: text("password"),
+  profilePhoto: text("profile_photo"),
   role: text("role").notNull().default("collector"),
   status: text("status").notNull().default("active"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -448,6 +449,7 @@ export const insertStaffSchema = createInsertSchema(staff).omit({
   phone: z.string().optional(),
   username: z.string().min(3, "Username must be at least 3 characters").optional(),
   password: z.string().min(6, "Password must be at least 6 characters").optional(),
+  profilePhoto: z.string().optional(),
   role: z.enum(["manager", "collector", "admin"]).default("collector"),
   status: z.enum(["active", "inactive"]).default("active"),
 });
@@ -531,6 +533,7 @@ export const insertDynamicSavingsPlanSchema = createInsertSchema(dynamicSavingsP
   interestRate: z.string().min(1, "Interest rate is required"),
   breakFee: z.string().min(1, "Break fee is required"),
   earlyWithdrawalPenalty: z.string().min(1, "Early withdrawal penalty is required"),
+  startDate: z.string().min(1, "Start date is required"),
   maturityDate: z.string().min(1, "Maturity date is required"),
   canBreakAfterDays: z.number().min(1, "Can break after days must be at least 1"),
   profitCalculationType: z.enum(["monthly", "quarterly", "biannually", "yearly"]).default("monthly"),
@@ -706,6 +709,7 @@ export const insertMemberInvestmentSchema = createInsertSchema(memberInvestments
   status: z.enum(["active", "matured", "broken", "completed"]).default("active"),
   notes: z.string().optional(),
   assignedBy: z.string().optional(),
+  startDate: z.string().min(1, "Start date is required"),
 });
 
 export const loginSchema = z.object({
