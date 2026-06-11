@@ -1,0 +1,41 @@
+Please review the project carefully. You will notice that there is an admin feature for adding staff members, however the current staff creation form is incomplete.
+
+The form does not include a password or role selection (Manager or Field Staff), which means that newly added staff members cannot log in to the system. This needs to be completed so that staff accounts are properly created with authentication and role-based access.
+
+Additionally, please add a passport/profile photo upload field to the staff entry form so each staff member can upload their profile image.
+
+Furthermore, the system currently does not support branch assignment. We need the following structure implemented:
+
+Assign Managers to specific branches
+
+Assign Staff to branches under a manager
+
+Ensure that each Manager can only view and manage staff assigned to their own branch
+
+In summary, the goal is to complete the staff management feature by enabling staff login, adding roles and profile photos, and implementing a proper branch–manager–staff hierarchy.
+
+Please extend the Add Member feature by including a Savings/Investment Plan form within the member creation process. This will allow Admins and Staff Managers to quickly create a savings or investment plan at the same time a member is added.
+
+Required Enhancements
+
+Savings/Investment Plan Form
+
+Add a plan creation section to the Add Member form
+
+This should be accessible to Admins and Staff Managers
+
+Plan details should be created and linked directly to the member upon submission
+
+Automatic Maturity Date Calculation
+
+When the staff or admin selects a start date, the system should automatically calculate the maturity date based on the plan duration
+
+The calculated maturity date should be stored and displayed for reference
+
+Plan / Investment Summary
+
+Whenever a savings or investment plan is created for a member, the system should automatically generate a plan summary
+
+The summary should be generated as a PDF document
+
+The PDF should be downloadable

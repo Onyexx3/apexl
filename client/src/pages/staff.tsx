@@ -1,0 +1,674 @@
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Plus, Pencil, Trash2, UserCheck, Building2, Camera, Upload, Info } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useToast } from "@/hooks/use-toast";
+import { Pagination } from "@/components/pagination";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import type { Branch, StaffWithBranch } from "@shared/schema";
+
+interface PaginatedResponse<T> {
+  data: T[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+export default function Staff() {
+  const [page, setPage] = useState(1);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [selectedStaff, setSelectedStaff] = useState<StaffWithBranch | null>(null);
+  const [formData, setFormData] = useState({
+    branchId: "",
+    name: "",
+    email: "",
+    phone: "",
+    username: "",
+    password: "",
+    profilePhoto: "",
+    role: "collector" as "manager" | "collector" | "admin",
+    status: "active" as "active" | "inactive",
+  });
+
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const { data: staffList, isLoading } = useQuery<PaginatedResponse<StaffWithBranch>>({
+    queryKey: ["/api/staff", page],
+    queryFn: async () => {
+      const response = await fetch(`/api/staff?page=${page}&limit=10`);
+      if (!response.ok) throw new Error("Failed to fetch staff");
+      return response.json();
+    },
+  });
+
+  const { data: branches } = useQuery<Branch[]>({
+    queryKey: ["/api/branches/all"],
+    queryFn: async () => {
+      const response = await fetch("/api/branches/all");
+      if (!response.ok) throw new Error("Failed to fetch branches");
+      return response.json();
+    },
+  });
+
+  // Get current user to check if they're a manager
+  const { data: currentUser } = useQuery({
+    queryKey: ["/api/user"],
+    queryFn: async () => {
+      const response = await fetch("/api/user");
+      if (!response.ok) return null;
+      return response.json();
+    },
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async (data: typeof formData) => {
+      const response = await fetch("/api/staff", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Failed to create staff");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/staff"] });
+      toast({ title: "Staff member created successfully" });
+      handleCloseDialog();
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: typeof formData }) => {
+      const response = await fetch(`/api/staff/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Failed to update staff");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/staff"] });
+      toast({ title: "Staff member updated successfully" });
+      handleCloseDialog();
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const response = await fetch(`/api/staff/${id}`, { method: "DELETE" });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Failed to delete staff");
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/staff"] });
+      toast({ title: "Staff member deleted successfully" });
+      setDeleteDialogOpen(false);
+      setSelectedStaff(null);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const handleOpenDialog = (staff?: StaffWithBranch) => {
+    if (staff) {
+      setSelectedStaff(staff);
+      setFormData({
+        branchId: staff.branchId,
+        name: staff.name,
+        email: staff.email || "",
+        phone: staff.phone || "",
+        username: staff.username || "",
+        password: "",
+        profilePhoto: staff.profilePhoto || "",
+        role: staff.role as "manager" | "collector" | "admin",
+        status: staff.status as "active" | "inactive",
+      });
+    } else {
+      setSelectedStaff(null);
+      setFormData({
+        branchId: currentUser?.role === "manager" ? currentUser.branchId : "",
+        name: "",
+        email: "",
+        phone: "",
+        username: "",
+        password: "",
+        profilePhoto: "",
+        role: "collector",
+        status: "active",
+      });
+    }
+    setDialogOpen(true);
+  };
+
+  const handleCloseDialog = () => {
+    setDialogOpen(false);
+    setSelectedStaff(null);
+    setFormData({
+      branchId: "",
+      name: "",
+      email: "",
+      phone: "",
+      username: "",
+      password: "",
+      profilePhoto: "",
+      role: "collector",
+      status: "active",
+    });
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (selectedStaff) {
+      updateMutation.mutate({ id: selectedStaff.id, data: formData });
+    } else {
+      createMutation.mutate(formData);
+    }
+  };
+
+  const handleDelete = (staff: StaffWithBranch) => {
+    setSelectedStaff(staff);
+    setDeleteDialogOpen(true);
+  };
+
+  const getRoleBadgeVariant = (role: string) => {
+    switch (role) {
+      case "admin":
+        return "destructive";
+      case "manager":
+        return "default";
+      default:
+        return "secondary";
+    }
+  };
+
+  return (
+    <TooltipProvider>
+      <div className="p-6 space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">Staff</h1>
+          <p className="text-muted-foreground">Manage all staff members across branches</p>
+        </div>
+        <Button onClick={() => handleOpenDialog()}>
+          <Plus className="w-4 h-4 mr-2" />
+          Add Staff
+        </Button>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <UserCheck className="w-5 h-5" />
+            All Staff Members
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <div className="flex items-center justify-center h-32">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+            </div>
+          ) : (
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Branch</TableHead>
+                    <TableHead>Email</TableHead>
+                    <TableHead>Phone</TableHead>
+                    <TableHead>Role</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {staffList?.data?.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                        No staff members found. Add your first staff member to get started.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    staffList?.data?.map((staff) => (
+                      <TableRow key={staff.id}>
+                        <TableCell className="font-medium">
+                          <div className="flex items-center gap-3">
+                            {staff.profilePhoto ? (
+                              <img
+                                src={staff.profilePhoto}
+                                alt={staff.name}
+                                className="w-8 h-8 rounded-full object-cover"
+                                onError={(e) => {
+                                  e.currentTarget.src = "";
+                                  e.currentTarget.style.display = "none";
+                                }}
+                              />
+                            ) : (
+                              <UserCheck className="w-4 h-4 text-muted-foreground" />
+                            )}
+                            {staff.name}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            <Building2 className="w-3 h-3 text-muted-foreground" />
+                            {staff.branch?.name || "-"}
+                          </div>
+                        </TableCell>
+                        <TableCell>{staff.email || "-"}</TableCell>
+                        <TableCell>{staff.phone || "-"}</TableCell>
+                        <TableCell>
+                          <Badge variant={getRoleBadgeVariant(staff.role)}>
+                            {staff.role}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={staff.status === "active" ? "default" : "secondary"}>
+                            {staff.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <Button variant="ghost" size="icon" onClick={() => handleOpenDialog(staff)}>
+                              <Pencil className="w-4 h-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon" onClick={() => handleDelete(staff)}>
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+              {staffList && staffList.totalPages > 1 && (
+                <div className="mt-4">
+                  <Pagination
+                    page={page}
+                    totalPages={staffList.totalPages}
+                    onPageChange={setPage}
+                  />
+                </div>
+              )}
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{selectedStaff ? "Edit Staff Member" : "Add Staff Member"}</DialogTitle>
+            <DialogDescription>
+              {selectedStaff ? "Update staff member details." : "Add a new staff member."}
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSubmit}>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="branch">Branch *</Label>
+                  <Tooltip>
+                    <TooltipTrigger>
+                      <Info className="h-4 w-4 text-muted-foreground" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Select the branch where this staff works</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <Select
+                  value={formData.branchId}
+                  onValueChange={(value) => setFormData({ ...formData, branchId: value })}
+                  disabled={currentUser?.role === "manager"}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a branch" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {branches?.map((branch) => (
+                      <SelectItem key={branch.id} value={branch.id}>
+                        {branch.name} ({branch.code})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {currentUser?.role === "manager" && (
+                  <p className="text-sm text-muted-foreground">
+                    As a manager, you can only create staff in your branch.
+                  </p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="name">Full Name *</Label>
+                  <Tooltip>
+                    <TooltipTrigger>
+                      <Info className="h-4 w-4 text-muted-foreground" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Enter the full name of the staff member</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <Input
+                  id="name"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  placeholder="John Doe"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="email">Email</Label>
+                  <Tooltip>
+                    <TooltipTrigger>
+                      <Info className="h-4 w-4 text-muted-foreground" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Email address for communication</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <Input
+                  id="email"
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  placeholder="john@example.com"
+                />
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="phone">Phone</Label>
+                  <Tooltip>
+                    <TooltipTrigger>
+                      <Info className="h-4 w-4 text-muted-foreground" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Phone number for contact</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <Input
+                  id="phone"
+                  value={formData.phone}
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  placeholder="+234 800 000 0000"
+                />
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="username">Username *</Label>
+                  <Tooltip>
+                    <TooltipTrigger>
+                      <Info className="h-4 w-4 text-muted-foreground" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Unique username for login</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <Input
+                  id="username"
+                  value={formData.username}
+                  onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                  placeholder="johndoe"
+                  required={!selectedStaff}
+                />
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="password">
+                    Password {!selectedStaff ? "*" : "(leave blank to keep current)"}
+                  </Label>
+                  <Tooltip>
+                    <TooltipTrigger>
+                      <Info className="h-4 w-4 text-muted-foreground" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Password for staff login</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <Input
+                  id="password"
+                  type="password"
+                  value={formData.password}
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  placeholder="Enter password"
+                  required={!selectedStaff}
+                />
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="profilePhoto">Profile Photo</Label>
+                  <Tooltip>
+                    <TooltipTrigger>
+                      <Info className="h-4 w-4 text-muted-foreground" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Upload or link a profile photo</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="profilePhoto"
+                    value={formData.profilePhoto}
+                    onChange={(e) => setFormData({ ...formData, profilePhoto: e.target.value })}
+                    placeholder="https://example.com/photo.jpg or upload"
+                    className="flex-1"
+                  />
+                  <input
+                    type="file"
+                    id="profilePhotoFile"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      
+                      const formDataUpload = new FormData();
+                      formDataUpload.append('photo', file);
+                      
+                      try {
+                        const response = await fetch('/api/upload/profile-photo', {
+                          method: 'POST',
+                          body: formDataUpload,
+                        });
+                        
+                        if (!response.ok) {
+                          throw new Error('Upload failed');
+                        }
+                        
+                        const result = await response.json();
+                        setFormData({ ...formData, profilePhoto: result.url });
+                        toast({ title: "Photo uploaded successfully" });
+                      } catch (error) {
+                        toast({ 
+                          title: "Upload failed", 
+                          description: "Please try again or use a URL",
+                          variant: "destructive" 
+                        });
+                      }
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => {
+                      document.getElementById('profilePhotoFile')?.click();
+                    }}
+                  >
+                    <Upload className="w-4 h-4" />
+                  </Button>
+                </div>
+                {formData.profilePhoto && (
+                  <div className="mt-2">
+                    <img
+                      src={formData.profilePhoto}
+                      alt="Profile preview"
+                      className="w-16 h-16 rounded-full object-cover border-2 border-gray-200"
+                      onError={(e) => {
+                        e.currentTarget.src = "";
+                        e.currentTarget.style.display = "none";
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="role">Role</Label>
+                  <Tooltip>
+                    <TooltipTrigger>
+                      <Info className="h-4 w-4 text-muted-foreground" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Staff role and permissions</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <Select
+                  value={formData.role}
+                  onValueChange={(value: "manager" | "collector" | "admin") =>
+                    setFormData({ ...formData, role: value })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="collector">Field Staff</SelectItem>
+                    <SelectItem value="manager">Manager</SelectItem>
+                    <SelectItem value="admin">Admin</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="status">Status</Label>
+                  <Tooltip>
+                    <TooltipTrigger>
+                      <Info className="h-4 w-4 text-muted-foreground" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Current employment status</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <Select
+                  value={formData.status}
+                  onValueChange={(value: "active" | "inactive") =>
+                    setFormData({ ...formData, status: value })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="inactive">Inactive</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={handleCloseDialog}>
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={createMutation.isPending || updateMutation.isPending || !formData.branchId || (!selectedStaff && (!formData.username || !formData.password))}
+              >
+                {createMutation.isPending || updateMutation.isPending ? "Saving..." : "Save"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Staff Member</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{selectedStaff?.name}"? Members assigned to this staff
+              will be unassigned. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => selectedStaff && deleteMutation.mutate(selectedStaff.id)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteMutation.isPending ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+    </TooltipProvider>
+  );
+}

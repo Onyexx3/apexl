@@ -1,0 +1,165 @@
+﻿Please review and update the project with the following corrections and enhancements:
+
+1. Member & Savings Plan Creation
+
+When staff clicks Add New Member, the Savings Plan form should also appear on the same page/modal so members and their plans can be created together.
+
+While staff is adding a member:
+
+There should be no “Assign to Staff” field
+
+The member should be automatically assigned to the staff who created them
+
+Managers:
+
+Should only manage staff within their own branch
+
+Must not see, edit, or manage Admin accounts
+
+Must not be able to add staff
+
+Fix issue where staff cannot see newly added members in the members table after creation.
+
+2. Role-Based Access Control
+
+Please properly enforce permissions:
+
+Staff
+
+Can add members
+
+Can create savings plans
+
+Cannot access Loans
+
+Should only see data related to their own members
+
+Dashboard statistics must be dynamic based on their records
+
+Manager
+
+Can manage staff within their branch only
+
+Cannot add staff
+
+Cannot see or manage Admin
+
+Dashboard statistics must be dynamic for their branch
+
+Admin
+
+Full system access
+
+Also:
+
+Review and fix all access control logic for Admin, Manager, and Staff.
+
+3. Savings Plan Logic
+
+When creating a savings plan:
+
+If target amount is entered, auto-calculate contribution per period
+
+If contribution amount is entered, auto-calculate target
+
+Always remember:
+
+The first contribution is a non-refundable fee
+
+This fee:
+
+Cannot be withdrawn
+
+Must not be included in loan/borrow calculations
+
+Must still be deducted even when the plan is closed or cancelled
+
+For completed, closed, or time-expired plans:
+
+Calculate payable amount after fee deduction
+
+Generate a transaction summary/receipt page showing:
+
+Status
+
+Contributions
+
+Fee
+
+Final payout
+
+Receipt should be downloadable and shareable
+
+4. Plan & Navigation Fixes
+
+Fix broken plan routing:
+
+/plans/{id} currently throws an error
+
+It only works under /members/{memberId}/plans/{planId}
+
+Please correct all navigation paths so plans open properly everywhere.
+
+5. UI / UX Improvements
+
+All modals must:
+
+Fit within screen size
+
+Be fully responsive
+
+Rework the sidebar menu:
+
+Remove unnecessary items
+
+Remove duplicate navigations (even if named differently)
+
+Simplify based on user role
+
+6. Staff & Branch Issues
+
+From Admin → Branch → Staff → Add Staff:
+
+Image upload currently shows “File upload coming soon”
+
+Please fix and enable actual upload.
+
+When editing a member:
+
+The system currently opens a blank “Create Member” form
+
+It should preload the existing member data properly.
+
+7. Dashboard
+
+Dashboard statistics must be dynamic for:
+
+Admin (global)
+
+Manager (branch-based)
+
+Staff (personal/member-based)
+
+8. Database
+Change from repair databases and connect to DATABASE_URL='postgresql://neondb_owner:npg_w7nh1TbWkADv@ep-solitary-rice-adunqyjm-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require' using env.
+Summary
+
+This task focuses on:
+
+Completing Add Member + Add Savings Plan flow
+
+Fixing authentication, permissions, and hierarchy
+
+Implementing proper role-based access
+
+Correcting savings calculations (including fee logic)
+
+Repairing navigation issues
+
+Improving UI responsiveness
+
+Cleaning sidebar menus
+
+Fixing broken staff upload and edit-member behavior
+
+Use Neon Sql
