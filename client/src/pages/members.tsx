@@ -36,7 +36,7 @@ import { MemberDialog } from "@/components/member-dialog";
 import type { Member } from "@shared/schema";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, invalidateAllQueries } from "@/lib/queryClient";
 import { Link } from "wouter";
 
 interface PaginatedMembers {
@@ -59,9 +59,9 @@ export default function Members() {
   const { toast } = useToast();
 
   const { data: response, isLoading } = useQuery<PaginatedMembers>({
-    queryKey: ["/api/members", page],
+    queryKey: ["/api/members", page, searchQuery],
     queryFn: async () => {
-      const res = await fetch(`/api/members?page=${page}&limit=10`);
+      const res = await fetch(`/api/members?page=${page}&limit=10&search=${encodeURIComponent(searchQuery)}`);
       return res.json();
     },
   });
@@ -73,8 +73,7 @@ export default function Members() {
       return apiRequest("DELETE", `/api/members/${id}`, {});
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/members"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+      invalidateAllQueries();
       toast({
         title: "Member deleted",
         description: "Member has been removed from the system.",
@@ -96,8 +95,7 @@ export default function Members() {
       return Promise.all(ids.map(id => apiRequest("DELETE", `/api/members/${id}`, {})));
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/members"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+      invalidateAllQueries();
       const count = selectedMemberIds.size;
       toast({
         title: "Members deleted",
@@ -122,8 +120,7 @@ export default function Members() {
       );
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/members"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+      invalidateAllQueries();
       const count = selectedMemberIds.size;
       toast({
         title: "Status updated",
@@ -191,11 +188,9 @@ export default function Members() {
     bulkStatusMutation.mutate({ ids: Array.from(selectedMemberIds), status });
   };
 
-  const filteredMembers = members?.filter((member) =>
-    member.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    member.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    member.phone?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // Search is applied server-side (see the /api/members query above), scoped
+  // to whatever this user's role can already see.
+  const filteredMembers = members;
 
   return (
     <div className="space-y-6">
@@ -219,7 +214,10 @@ export default function Members() {
               <Input
                 placeholder="Search members..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setPage(1);
+                }}
                 className="pl-9"
                 data-testid="input-search-members"
               />
@@ -400,6 +398,13 @@ export default function Members() {
                 </TableBody>
               </Table>
             </div>
+          )}
+          {response && response.totalPages > 1 && (
+            <Pagination
+              currentPage={page}
+              totalPages={response.totalPages}
+              onPageChange={setPage}
+            />
           )}
         </CardContent>
       </Card>

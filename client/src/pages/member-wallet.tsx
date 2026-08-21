@@ -43,7 +43,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, invalidateAllQueries } from "@/lib/queryClient";
 
 const walletActionSchema = z.object({
   amount: z.string().min(1, "Amount is required").refine((val) => !isNaN(Number(val)) && Number(val) > 0, {
@@ -88,7 +88,7 @@ export default function MemberWallet() {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/members", memberId] });
+      invalidateAllQueries();
       toast({
         title: "Deposit successful",
         description: "Funds have been added to the wallet.",
@@ -113,7 +113,7 @@ export default function MemberWallet() {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/members", memberId] });
+      invalidateAllQueries();
       toast({
         title: "Withdrawal successful",
         description: "Funds have been withdrawn from the wallet.",

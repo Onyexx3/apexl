@@ -22,7 +22,8 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { insertPlanContributionSchema, type InsertPlanContribution, type Member, type SavingsPlan } from "@shared/schema";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, invalidateAllQueries } from "@/lib/queryClient";
+import { getPlanMaxContributions } from "@/lib/savingsPlan";
 import { DollarSign, CalendarIcon, Info } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
@@ -99,8 +100,7 @@ export default function Savings() {
     },
     onSuccess: (response: any) => {
       const count = response?.count || 1;
-      queryClient.invalidateQueries({ queryKey: ["/api/members", selectedMemberId, "plans"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+      invalidateAllQueries();
       toast({
         title: "Savings recorded",
         description: `${count} daily contributions have been recorded (${count} timeline slots updated).`,
@@ -220,7 +220,7 @@ export default function Savings() {
                     <SelectContent>
                       {activePlans.map((plan) => (
                         <SelectItem key={plan.id} value={plan.id}>
-                          {plan.planName} - ₦{parseFloat(plan.contributionAmount).toFixed(2)} per contribution ({plan.contributionsCount}/62)
+                          {plan.planName} - ₦{parseFloat(plan.contributionAmount).toFixed(2)} per contribution ({plan.contributionsCount}/{getPlanMaxContributions(plan)})
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -237,7 +237,7 @@ export default function Savings() {
                     <span className="font-medium">Total Saved:</span> ₦{selectedPlan?.totalSaved && parseFloat(selectedPlan.totalSaved).toFixed(2)}
                   </p>
                   <p className="text-sm mt-1">
-                    <span className="font-medium">Progress:</span> {selectedPlan?.contributionsCount || 0}/62 days
+                    <span className="font-medium">Progress:</span> {selectedPlan?.contributionsCount || 0}/{selectedPlan ? getPlanMaxContributions(selectedPlan) : 31} days
                   </p>
                 </div>
               )}

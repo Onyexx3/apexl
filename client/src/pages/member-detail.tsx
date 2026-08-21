@@ -38,12 +38,12 @@ import {
 } from "@/components/ui/select";
 import { ArrowLeft, Mail, Phone, MapPin, Calendar, TrendingUp, TrendingDown, Wallet, Target, Plus, Zap, Banknote, CalendarDays, Clock, Info } from "lucide-react";
 import type { MemberWithTransactions, SavingsPlan, InsertSavingsPlan, MemberInvestmentWithDetails, YearlySavingsPlan, InsertYearlySavingsPlan } from "@shared/schema";
-import { format } from "date-fns";
+import { format, addDays } from "date-fns";
 import { insertSavingsPlanSchema, insertYearlySavingsPlanSchema } from "@shared/schema";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, invalidateAllQueries } from "@/lib/queryClient";
 import {
   Tooltip,
   TooltipContent,
@@ -107,7 +107,8 @@ export default function MemberDetail() {
       planName: "",
       targetAmount: "",
       contributionAmount: "",
-      maxContributions: 62,
+      maxContributions: 31,
+      startDate: format(new Date(), "yyyy-MM-dd"),
     },
   });
 
@@ -121,9 +122,15 @@ export default function MemberDetail() {
       maxContributions: 372,
       maxDays: 372,
       profitRate: "5.00",
-      maturityDate: new Date(Date.now() + 372 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      startDate: format(new Date(), "yyyy-MM-dd"),
     },
   });
+
+  const yearlyWatchedStartDate = yearlyForm.watch("startDate");
+  const yearlyWatchedMaxDays = yearlyForm.watch("maxDays");
+  const yearlyComputedMaturityDate = yearlyWatchedStartDate
+    ? format(addDays(new Date(yearlyWatchedStartDate), yearlyWatchedMaxDays || 372), "MMM dd, yyyy")
+    : "";
 
   const savingsForm = useForm({
     defaultValues: {
@@ -146,7 +153,7 @@ export default function MemberDetail() {
       return apiRequest("POST", "/api/savings-plans", data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/members", memberId, "plans"] });
+      invalidateAllQueries();
       toast({ title: "Savings plan created", description: "New savings plan has been created successfully." });
       setCreatePlanOpen(false);
       form.reset();
@@ -167,8 +174,7 @@ export default function MemberDetail() {
     },
     onSuccess: (response: any) => {
       const count = response?.count || 1;
-      queryClient.invalidateQueries({ queryKey: ["/api/members", memberId, "plans"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+      invalidateAllQueries();
       toast({
         title: "Savings recorded",
         description: `${count} daily contributions have been recorded.`,
@@ -186,7 +192,7 @@ export default function MemberDetail() {
       return apiRequest("POST", "/api/yearly-savings-plans", data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/members", memberId, "yearly-plans"] });
+      invalidateAllQueries();
       toast({ title: "Yearly savings plan created", description: "New yearly savings plan has been created successfully." });
       setCreateYearlyPlanOpen(false);
       yearlyForm.reset();
@@ -207,8 +213,7 @@ export default function MemberDetail() {
     },
     onSuccess: (response: any) => {
       const count = response?.count || 1;
-      queryClient.invalidateQueries({ queryKey: ["/api/members", memberId, "yearly-plans"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+      invalidateAllQueries();
       toast({
         title: "Yearly savings recorded",
         description: `${count} yearly contributions have been recorded.`,
@@ -806,6 +811,19 @@ export default function MemberDetail() {
                   </FormItem>
                 )}
               />
+              <FormField
+                control={form.control}
+                name="startDate"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Start Date *</FormLabel>
+                    <FormControl>
+                      <Input type="date" {...field} data-testid="input-start-date" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
               <div className="flex justify-end gap-3 pt-4">
                 <Button type="button" variant="outline" onClick={() => setCreatePlanOpen(false)}>
                   Cancel
@@ -1025,27 +1043,35 @@ export default function MemberDetail() {
               />
               <FormField
                 control={yearlyForm.control}
-                name="maturityDate"
+                name="startDate"
                 render={({ field }) => (
                   <FormItem>
-                    <div className="flex items-center gap-2">
-                      <FormLabel>Maturity Date *</FormLabel>
-                      <Tooltip>
-                        <TooltipTrigger>
-                          <Info className="h-4 w-4 text-muted-foreground" />
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>The date when this yearly plan will mature (372 days from start)</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </div>
+                    <FormLabel>Start Date *</FormLabel>
                     <FormControl>
-                      <Input type="date" {...field} data-testid="input-yearly-maturity-date" />
+                      <Input type="date" {...field} data-testid="input-yearly-start-date" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <FormLabel>Maturity Date</FormLabel>
+                  <Tooltip>
+                    <TooltipTrigger>
+                      <Info className="h-4 w-4 text-muted-foreground" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Automatically calculated as 372 days from the start date</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <div className="flex items-center p-2 border rounded-md bg-muted/50">
+                  <span className="text-sm" data-testid="text-yearly-maturity-date">
+                    {yearlyComputedMaturityDate || "Select a start date"}
+                  </span>
+                </div>
+              </div>
               <div className="flex justify-end gap-3 pt-4">
                 <Button type="button" variant="outline" onClick={() => setCreateYearlyPlanOpen(false)}>
                   Cancel

@@ -55,3 +55,13 @@ export const queryClient = new QueryClient({
     },
   },
 });
+
+// staleTime is Infinity above, so the only way a page ever sees fresh data
+// after a mutation is an invalidation. Per-key invalidation is easy to get
+// wrong (a query key you forgot about, a key shape that doesn't match), so
+// mutations across the app invalidate everything instead of guessing keys.
+// React Query only actually refetches queries that are currently mounted,
+// so this doesn't cause a flood of background requests.
+export function invalidateAllQueries() {
+  return queryClient.invalidateQueries();
+}

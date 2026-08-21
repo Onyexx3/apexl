@@ -41,7 +41,7 @@ import { Plus, Search, Check, X, Banknote } from "lucide-react";
 import type { TransactionWithMember, Member, InsertTransaction } from "@shared/schema";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, invalidateAllQueries } from "@/lib/queryClient";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertTransactionSchema } from "@shared/schema";
@@ -68,9 +68,9 @@ export default function Payouts() {
   const canManagePayouts = user?.role === "admin" || user?.role === "manager";
 
   const { data: response, isLoading } = useQuery<PaginatedPayouts>({
-    queryKey: ["/api/transactions/payouts", page],
+    queryKey: ["/api/transactions/payouts", page, searchQuery],
     queryFn: async () => {
-      const res = await fetch(`/api/transactions/payouts?page=${page}&limit=10`);
+      const res = await fetch(`/api/transactions/payouts?page=${page}&limit=10&search=${encodeURIComponent(searchQuery)}`);
       return res.json();
     },
   });
@@ -103,9 +103,7 @@ export default function Payouts() {
       return apiRequest("POST", "/api/transactions", data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/transactions/payouts"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/members"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+      invalidateAllQueries();
       toast({
         title: "Payout requested",
         description: "Payout request has been created successfully.",
@@ -127,9 +125,7 @@ export default function Payouts() {
       return apiRequest("PATCH", `/api/transactions/${id}/approve`, {});
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/members"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+      invalidateAllQueries();
       toast({
         title: "Payout approved",
         description: "Payout has been approved. You can now complete it with payment details.",
@@ -149,7 +145,7 @@ export default function Payouts() {
       return apiRequest("PATCH", `/api/transactions/${id}/reject`, {});
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
+      invalidateAllQueries();
       toast({
         title: "Payout rejected",
         description: "Payout request has been rejected.",
@@ -173,9 +169,8 @@ export default function Payouts() {
     setCompleteDialogOpen(true);
   };
 
-  const filteredPayouts = payouts?.filter((payout) =>
-    payout.member?.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // Search is applied server-side (scoped to this user's role); payouts is already filtered.
+  const filteredPayouts = payouts;
 
   const allMembers = (membersResponse as any)?.data || [];
   const activeMembers = allMembers.filter((m: Member) => m.status === "active");
@@ -217,7 +212,10 @@ export default function Payouts() {
               <Input
                 placeholder="Search by member..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setPage(1);
+                }}
                 className="pl-9"
                 data-testid="input-search-payouts"
               />
@@ -338,7 +336,7 @@ export default function Payouts() {
           {response && response.totalPages > 1 && (
             <div className="mt-4">
               <Pagination
-                page={page}
+                currentPage={page}
                 totalPages={response.totalPages}
                 onPageChange={setPage}
               />
@@ -469,7 +467,7 @@ export default function Payouts() {
           memberName={selectedPayout.member?.name || ""}
           amount={parseFloat(selectedPayout.amount)}
           onSuccess={() => {
-            queryClient.invalidateQueries({ queryKey: ["/api/transactions/payouts"] });
+            invalidateAllQueries();
           }}
         />
       )}

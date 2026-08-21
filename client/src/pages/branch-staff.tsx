@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { invalidateAllQueries } from "@/lib/queryClient";
 import { useRoute, Link } from "wouter";
 import { Plus, Pencil, Trash2, ArrowLeft, Users, UserCheck, Camera, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -62,7 +63,6 @@ export default function BranchStaff() {
   });
 
   const { toast } = useToast();
-  const queryClient = useQueryClient();
 
   const { data: branch, isLoading } = useQuery<BranchWithStaff>({
     queryKey: ["/api/branches", branchId],
@@ -98,7 +98,7 @@ export default function BranchStaff() {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/branches", branchId] });
+      invalidateAllQueries();
       toast({ title: "Staff member added successfully" });
       handleCloseDialog();
     },
@@ -121,7 +121,7 @@ export default function BranchStaff() {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/branches", branchId] });
+      invalidateAllQueries();
       toast({ title: "Staff member updated successfully" });
       handleCloseDialog();
     },
@@ -139,7 +139,7 @@ export default function BranchStaff() {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/branches", branchId] });
+      invalidateAllQueries();
       toast({ title: "Staff member deleted successfully" });
       setDeleteDialogOpen(false);
       setSelectedStaff(null);

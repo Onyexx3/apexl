@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { invalidateAllQueries } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -49,7 +50,6 @@ const PAYMENT_PLANS = [
 export default function InvestmentTypes() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingType, setEditingType] = useState<InvestmentType | null>(null);
@@ -89,7 +89,7 @@ export default function InvestmentTypes() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/investment-types"] });
+      invalidateAllQueries();
       toast({ title: "Investment type created successfully" });
       resetForm();
       setIsDialogOpen(false);
@@ -113,7 +113,7 @@ export default function InvestmentTypes() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/investment-types"] });
+      invalidateAllQueries();
       toast({ title: "Investment type updated successfully" });
       resetForm();
       setIsDialogOpen(false);
@@ -132,7 +132,7 @@ export default function InvestmentTypes() {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/investment-types"] });
+      invalidateAllQueries();
       toast({ title: "Investment type deleted successfully" });
     },
     onError: (error: Error) => {

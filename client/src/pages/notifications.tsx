@@ -15,7 +15,7 @@ import {
 import type { Notification } from "@shared/schema";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, invalidateAllQueries } from "@/lib/queryClient";
 
 interface PaginatedNotifications {
   data: Notification[];
@@ -44,7 +44,7 @@ export default function Notifications() {
       return apiRequest("PATCH", `/api/notifications/${id}/read`, {});
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+      invalidateAllQueries();
     },
   });
 

@@ -33,8 +33,10 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertSavingsPlanSchema, type InsertSavingsPlan, type SavingsPlan, type Member } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, invalidateAllQueries } from "@/lib/queryClient";
+import { getPlanMaxContributions } from "@/lib/savingsPlan";
 import { Link } from "wouter";
+import { format } from "date-fns";
 
 interface PaginatedPlans {
   data: SavingsPlan[];
@@ -59,9 +61,9 @@ export default function SavingsPlans() {
   const { toast } = useToast();
 
   const { data: response, isLoading: plansLoading } = useQuery<PaginatedPlans>({
-    queryKey: ["/api/savings-plans", page],
+    queryKey: ["/api/savings-plans", page, searchQuery],
     queryFn: async () => {
-      const res = await fetch(`/api/savings-plans?page=${page}&limit=10`);
+      const res = await fetch(`/api/savings-plans?page=${page}&limit=10&search=${encodeURIComponent(searchQuery)}`);
       return res.json();
     },
   });
@@ -86,6 +88,7 @@ export default function SavingsPlans() {
       targetAmount: "",
       contributionAmount: "",
       maxContributions: 31,
+      startDate: format(new Date(), "yyyy-MM-dd"),
     },
   });
 
@@ -94,7 +97,7 @@ export default function SavingsPlans() {
       return apiRequest("POST", "/api/savings-plans", data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/savings-plans"] });
+      invalidateAllQueries();
       toast({
         title: "Savings plan created",
         description: "New savings plan has been created successfully.",
@@ -115,20 +118,12 @@ export default function SavingsPlans() {
     createMutation.mutate(data);
   };
 
-  const filteredPlans = Array.isArray(plans) ? plans.filter((plan) => {
-    const member = Array.isArray(members) ? members.find((m) => m.id === plan.memberId) : undefined;
-    return member?.name.toLowerCase().includes(searchQuery.toLowerCase());
-  }) : [];
+  // Search (by plan name or member name) is applied server-side, scoped to this user's role.
+  const filteredPlans = Array.isArray(plans) ? plans : [];
 
   const pendingPayoutPlans = Array.isArray(plans) ? plans.filter((plan) => plan.payoutStatus === "pending") : [];
 
   const activeMembers = Array.isArray(members) ? members.filter((m) => m.status === "active") : [];
-
-  const getCorrectMaxContributions = (plan: SavingsPlan) => {
-    // For daily savings plans, always show 31 days (monthly limit)
-    // regardless of what was set in the database
-    return 31;
-  };
 
   return (
     <div className="space-y-6">
@@ -154,9 +149,12 @@ export default function SavingsPlans() {
             <div className="relative w-full sm:w-64">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
-                placeholder="Search by member..."
+                placeholder="Search by plan or member..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setPage(1);
+                }}
                 className="pl-9"
                 data-testid="input-search-plans"
               />
@@ -184,7 +182,7 @@ export default function SavingsPlans() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {filteredPlans.map((plan) => {
                 const member = members?.find((m) => m.id === plan.memberId);
-                const correctMaxContributions = getCorrectMaxContributions(plan);
+                const correctMaxContributions = getPlanMaxContributions(plan);
                 const progressPercent = (plan.contributionsCount / correctMaxContributions) * 100;
                 return (
                   <Card key={plan.id} className="flex flex-col" data-testid={`card-plan-${plan.id}`}>
@@ -255,6 +253,13 @@ export default function SavingsPlans() {
               })}
             </div>
           )}
+          {response && response.totalPages > 1 && (
+            <Pagination
+              currentPage={page}
+              totalPages={response.totalPages}
+              onPageChange={setPage}
+            />
+          )}
         </CardContent>
       </Card>
 
@@ -270,7 +275,7 @@ export default function SavingsPlans() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {pendingPayoutPlans.map((plan) => {
                 const member = members?.find((m) => m.id === plan.memberId);
-                const correctMaxContributions = getCorrectMaxContributions(plan);
+                const correctMaxContributions = getPlanMaxContributions(plan);
                 return (
                   <Card key={plan.id} className="flex flex-col border-amber-200 bg-amber-50/50" data-testid={`card-pending-plan-${plan.id}`}>
                     <CardHeader className="pb-3">
@@ -410,6 +415,23 @@ export default function SavingsPlans() {
                   )}
                 />
               </div>
+              <FormField
+                control={form.control}
+                name="startDate"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Start Date *</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="date"
+                        {...field}
+                        data-testid="input-start-date"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
               <div className="flex justify-end gap-3 pt-4">
                 <Button
                   type="button"

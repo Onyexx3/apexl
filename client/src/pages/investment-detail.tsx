@@ -1,4 +1,5 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { invalidateAllQueries } from "@/lib/queryClient";
 import { useRoute, Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,7 +16,6 @@ export default function InvestmentDetail() {
   const investmentId = params?.id;
   const { toast } = useToast();
   const { user } = useAuth();
-  const queryClient = useQueryClient();
 
   const { data: investment, isLoading } = useQuery<MemberInvestmentWithDetails>({
     queryKey: ["/api/investments", investmentId],
@@ -37,7 +37,7 @@ export default function InvestmentDetail() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/investments"] });
+      invalidateAllQueries();
       toast({ title: "Investment broken successfully" });
     },
     onError: (error: Error) => {
@@ -55,7 +55,7 @@ export default function InvestmentDetail() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/investments"] });
+      invalidateAllQueries();
       toast({ title: "Investment matured successfully" });
     },
     onError: (error: Error) => {

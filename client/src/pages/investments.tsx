@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { invalidateAllQueries } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -28,7 +29,6 @@ interface PaginatedResponse<T> {
 export default function Investments() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [formData, setFormData] = useState({
@@ -80,7 +80,7 @@ export default function Investments() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/investments"] });
+      invalidateAllQueries();
       toast({ title: "Investment created successfully" });
       resetForm();
       setIsDialogOpen(false);
@@ -100,7 +100,7 @@ export default function Investments() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/investments"] });
+      invalidateAllQueries();
       toast({ title: "Investment broken successfully" });
     },
     onError: (error: Error) => {
@@ -118,7 +118,7 @@ export default function Investments() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/investments"] });
+      invalidateAllQueries();
       toast({ title: "Investment matured successfully" });
     },
     onError: (error: Error) => {

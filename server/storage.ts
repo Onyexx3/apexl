@@ -6,7 +6,7 @@ import {
   savingsPlanTypes, dynamicSavingsPlans, dynamicSavingsPlanContributions
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, sql, lt, and } from "drizzle-orm";
+import { eq, desc, sql, lt, and, inArray, ilike, or } from "drizzle-orm";
 import { hashPassword } from "./auth";
 import type { 
   Branch, Staff, Member, Transaction, SavingsPlan, PlanContribution,
@@ -56,7 +56,7 @@ export interface IStorage {
   getMember(id: string): Promise<MemberWithTransactions | undefined>;
   getMemberWithStaff(id: string): Promise<MemberWithStaff | undefined>;
   getAllMembers(): Promise<Member[]>;
-  getMembersPaginated(page: number, limit: number): Promise<PaginatedResponse<Member>>;
+  getMembersPaginated(page: number, limit: number, search?: string): Promise<PaginatedResponse<Member>>;
   getMembersByStaff(staffId: string): Promise<Member[]>;
   createMember(member: InsertMember): Promise<Member>;
   updateMember(id: string, member: Partial<InsertMember>): Promise<Member>;
@@ -64,19 +64,21 @@ export interface IStorage {
 
   getTransaction(id: string): Promise<TransactionWithMember | undefined>;
   getAllTransactions(): Promise<TransactionWithMember[]>;
-  getTransactionsPaginated(page: number, limit: number): Promise<PaginatedResponse<TransactionWithMember>>;
-  getRecentTransactions(limit: number): Promise<TransactionWithMember[]>;
+  getTransactionsPaginated(page: number, limit: number, user: { role: string; id: string; branchId: string }, search?: string): Promise<PaginatedResponse<TransactionWithMember>>;
+  getRecentTransactions(limit: number, user: { role: string; id: string; branchId: string }): Promise<TransactionWithMember[]>;
   getTransactionsByType(type: string): Promise<TransactionWithMember[]>;
-  getPayoutsPaginated(page: number, limit: number): Promise<PaginatedResponse<TransactionWithMember>>;
+  getPayoutsPaginated(page: number, limit: number, user: { role: string; id: string; branchId: string }, search?: string): Promise<PaginatedResponse<TransactionWithMember>>;
   createTransaction(transaction: InsertTransaction, skipWalletUpdate?: boolean): Promise<Transaction>;
   updateTransactionStatus(id: string, status: string): Promise<Transaction>;
   completePayoutTransaction(id: string, payoutDetails: { payoutDestination: string; payoutAccountNumber: string; payoutAccountName: string; payoutBankName: string; processedBy: string }): Promise<Transaction>;
 
   getSavingsPlan(id: string): Promise<SavingsPlanWithDetails | undefined>;
   getAllSavingsPlans(): Promise<SavingsPlan[]>;
-  getPlansPaginated(page: number, limit: number): Promise<PaginatedResponse<SavingsPlan>>;
+  getPlansPaginated(page: number, limit: number, user: { role: string; id: string; branchId: string }, search?: string): Promise<PaginatedResponse<SavingsPlan>>;
   getMemberSavingsPlans(memberId: string): Promise<SavingsPlan[]>;
   createSavingsPlan(plan: InsertSavingsPlan): Promise<SavingsPlan>;
+  cancelSavingsPlan(id: string): Promise<{ plan: SavingsPlan; payoutAmount: number }>;
+  deleteSavingsPlan(id: string): Promise<void>;
   createPlanContribution(contribution: InsertPlanContribution): Promise<PlanContribution>;
   createMultiplePlanContributions(planId: string, memberId: string, totalAmount: number, paymentMethod?: string, notes?: string, date?: string, recordedBy?: string): Promise<ContributionResult>;
   checkAndClosePlan(planId: string): Promise<void>;
@@ -87,7 +89,7 @@ export interface IStorage {
 
   getYearlySavingsPlan(id: string): Promise<YearlySavingsPlanWithDetails | undefined>;
   getAllYearlySavingsPlans(): Promise<YearlySavingsPlan[]>;
-  getYearlyPlansPaginated(page: number, limit: number): Promise<PaginatedResponse<YearlySavingsPlan>>;
+  getYearlyPlansPaginated(page: number, limit: number, user: { role: string; id: string; branchId: string }, search?: string): Promise<PaginatedResponse<YearlySavingsPlan>>;
   getMemberYearlySavingsPlans(memberId: string): Promise<YearlySavingsPlan[]>;
   createYearlySavingsPlan(plan: InsertYearlySavingsPlan): Promise<YearlySavingsPlan>;
   createYearlyPlanContribution(contribution: InsertYearlyPlanContribution): Promise<YearlyPlanContribution>;
@@ -145,10 +147,10 @@ export interface IStorage {
   }>;
 
   getAllNotifications(): Promise<Notification[]>;
-  getNotificationsPaginated(page: number, limit: number): Promise<PaginatedResponse<Notification>>;
+  getNotificationsPaginated(page: number, limit: number, user: { role: string; id: string; branchId: string }): Promise<PaginatedResponse<Notification>>;
   createNotification(notification: InsertNotification): Promise<Notification>;
   markNotificationAsRead(id: string): Promise<Notification>;
-  getUnreadNotificationCount(): Promise<number>;
+  getUnreadNotificationCount(user: { role: string; id: string; branchId: string }): Promise<number>;
 
   // Investment Type Management
   getInvestmentTypes(): Promise<InvestmentType[]>;
@@ -331,11 +333,14 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(members).orderBy(desc(members.joinDate));
   }
 
-  async getMembersPaginated(page: number, limit: number): Promise<PaginatedResponse<Member>> {
+  async getMembersPaginated(page: number, limit: number, search?: string): Promise<PaginatedResponse<Member>> {
     const offset = (page - 1) * limit;
+    const whereClause = search && search.trim()
+      ? or(ilike(members.name, `%${search.trim()}%`), ilike(members.email, `%${search.trim()}%`), ilike(members.phone, `%${search.trim()}%`))
+      : undefined;
     const [data, countResult] = await Promise.all([
-      db.select().from(members).orderBy(desc(members.joinDate)).limit(limit).offset(offset),
-      db.select({ count: sql`count(*)` }).from(members),
+      db.select().from(members).where(whereClause).orderBy(desc(members.joinDate)).limit(limit).offset(offset),
+      db.select({ count: sql`count(*)` }).from(members).where(whereClause),
     ]);
     const total = Number(countResult[0]?.count) || 0;
     return {
@@ -400,16 +405,45 @@ export class DatabaseStorage implements IStorage {
     return result;
   }
 
-  async getTransactionsPaginated(page: number, limit: number): Promise<PaginatedResponse<TransactionWithMember>> {
+  // Resolves member ids matching a name search, intersected with an optional
+  // scoping list. Returns undefined when there's no search term (no filter needed).
+  private async getSearchMemberIds(search: string | undefined, scopedMemberIds: string[] | undefined): Promise<string[] | undefined> {
+    if (!search || !search.trim()) {
+      return undefined;
+    }
+    const matches = await db.select({ id: members.id }).from(members).where(ilike(members.name, `%${search.trim()}%`));
+    const matchingIds = matches.map(m => m.id);
+    if (!scopedMemberIds) {
+      return matchingIds;
+    }
+    const scopedSet = new Set(scopedMemberIds);
+    return matchingIds.filter(id => scopedSet.has(id));
+  }
+
+  async getTransactionsPaginated(page: number, limit: number, user: { role: string; id: string; branchId: string }, search?: string): Promise<PaginatedResponse<TransactionWithMember>> {
     const offset = (page - 1) * limit;
+    const scopedMemberIds = await this.getScopedMemberIds(user);
+    if (scopedMemberIds && scopedMemberIds.length === 0) {
+      return { data: [], total: 0, page, limit, totalPages: 0 };
+    }
+
+    const searchMemberIds = await this.getSearchMemberIds(search, scopedMemberIds);
+    if (searchMemberIds && searchMemberIds.length === 0) {
+      return { data: [], total: 0, page, limit, totalPages: 0 };
+    }
+
+    const effectiveMemberIds = searchMemberIds ?? scopedMemberIds;
+    const whereClause = effectiveMemberIds ? inArray(transactions.memberId, effectiveMemberIds) : undefined;
+
     const [data, countResult] = await Promise.all([
       db.query.transactions.findMany({
+        where: whereClause,
         with: { member: true },
         orderBy: [desc(transactions.date)],
         limit,
         offset,
       }),
-      db.select({ count: sql`count(*)` }).from(transactions),
+      db.select({ count: sql`count(*)` }).from(transactions).where(whereClause),
     ]);
     const total = Number(countResult[0]?.count) || 0;
     return {
@@ -421,8 +455,14 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
-  async getRecentTransactions(limit: number): Promise<TransactionWithMember[]> {
+  async getRecentTransactions(limit: number, user: { role: string; id: string; branchId: string }): Promise<TransactionWithMember[]> {
+    const scopedMemberIds = await this.getScopedMemberIds(user);
+    if (scopedMemberIds && scopedMemberIds.length === 0) {
+      return [];
+    }
+
     const result = await db.query.transactions.findMany({
+      where: scopedMemberIds ? inArray(transactions.memberId, scopedMemberIds) : undefined,
       with: {
         member: true,
       },
@@ -443,17 +483,32 @@ export class DatabaseStorage implements IStorage {
     return result;
   }
 
-  async getPayoutsPaginated(page: number, limit: number): Promise<PaginatedResponse<TransactionWithMember>> {
+  async getPayoutsPaginated(page: number, limit: number, user: { role: string; id: string; branchId: string }, search?: string): Promise<PaginatedResponse<TransactionWithMember>> {
     const offset = (page - 1) * limit;
+    const scopedMemberIds = await this.getScopedMemberIds(user);
+    if (scopedMemberIds && scopedMemberIds.length === 0) {
+      return { data: [], total: 0, page, limit, totalPages: 0 };
+    }
+
+    const searchMemberIds = await this.getSearchMemberIds(search, scopedMemberIds);
+    if (searchMemberIds && searchMemberIds.length === 0) {
+      return { data: [], total: 0, page, limit, totalPages: 0 };
+    }
+
+    const effectiveMemberIds = searchMemberIds ?? scopedMemberIds;
+    const whereClause = effectiveMemberIds
+      ? and(eq(transactions.type, "payout"), inArray(transactions.memberId, effectiveMemberIds))
+      : eq(transactions.type, "payout");
+
     const [data, countResult] = await Promise.all([
       db.query.transactions.findMany({
-        where: eq(transactions.type, "payout"),
+        where: whereClause,
         with: { member: true },
         orderBy: [desc(transactions.date)],
         limit,
         offset,
       }),
-      db.select({ count: sql`count(*)` }).from(transactions).where(eq(transactions.type, "payout")),
+      db.select({ count: sql`count(*)` }).from(transactions).where(whereClause),
     ]);
     const total = Number(countResult[0]?.count) || 0;
     return {
@@ -629,11 +684,33 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(savingsPlans).orderBy(desc(savingsPlans.startDate));
   }
 
-  async getPlansPaginated(page: number, limit: number): Promise<PaginatedResponse<SavingsPlan>> {
+  async getPlansPaginated(page: number, limit: number, user: { role: string; id: string; branchId: string }, search?: string): Promise<PaginatedResponse<SavingsPlan>> {
     const offset = (page - 1) * limit;
+    const scopedMemberIds = await this.getScopedMemberIds(user);
+    if (scopedMemberIds && scopedMemberIds.length === 0) {
+      return { data: [], total: 0, page, limit, totalPages: 0 };
+    }
+
+    const conditions = [];
+    if (scopedMemberIds) {
+      conditions.push(inArray(savingsPlans.memberId, scopedMemberIds));
+    }
+    if (search && search.trim()) {
+      const term = `%${search.trim()}%`;
+      const matchingMembers = await db.select({ id: members.id }).from(members).where(ilike(members.name, term));
+      const matchingMemberIds = matchingMembers.map(m => m.id);
+      conditions.push(
+        matchingMemberIds.length > 0
+          ? or(ilike(savingsPlans.planName, term), inArray(savingsPlans.memberId, matchingMemberIds))
+          : ilike(savingsPlans.planName, term)
+      );
+    }
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
     const [data, countResult] = await Promise.all([
-      db.select().from(savingsPlans).orderBy(desc(savingsPlans.startDate)).limit(limit).offset(offset),
-      db.select({ count: sql`count(*)` }).from(savingsPlans),
+      db.select().from(savingsPlans).where(whereClause).orderBy(desc(savingsPlans.startDate)).limit(limit).offset(offset),
+      db.select({ count: sql`count(*)` }).from(savingsPlans).where(whereClause),
     ]);
     const total = Number(countResult[0]?.count) || 0;
     return {
@@ -658,11 +735,89 @@ export class DatabaseStorage implements IStorage {
       .insert(savingsPlans)
       .values({
         ...insertPlan,
+        startDate: new Date(insertPlan.startDate),
         maxContributions: insertPlan.maxContributions || 31,
         maxDays: insertPlan.maxDays || 62,
       })
       .returning();
     return plan;
+  }
+
+  async cancelSavingsPlan(id: string): Promise<{ plan: SavingsPlan; payoutAmount: number }> {
+    const plan = await db.query.savingsPlans.findFirst({
+      where: eq(savingsPlans.id, id),
+    });
+
+    if (!plan) {
+      throw new Error("Savings plan not found");
+    }
+
+    if (plan.status !== "active") {
+      throw new Error("Only an active plan can be cancelled");
+    }
+
+    const totalSaved = parseFloat(plan.totalSaved);
+    const fee = parseFloat(plan.contributionAmount);
+    const payoutAmount = Math.max(0, totalSaved - fee);
+
+    const [updatedPlan] = await db
+      .update(savingsPlans)
+      .set({
+        status: "cancelled",
+        completedDate: new Date(),
+      })
+      .where(eq(savingsPlans.id, id))
+      .returning();
+
+    if (payoutAmount > 0) {
+      await this.createTransaction({
+        memberId: plan.memberId,
+        planId: plan.id,
+        type: "payout",
+        amount: payoutAmount.toString(),
+        status: "completed",
+        date: new Date().toISOString(),
+        notes: `Plan "${plan.planName}" cancelled early${totalSaved > 0 ? ` (₦${fee.toFixed(2)} fee deducted)` : ""}`,
+      }, true);
+
+      await this.addToWallet(plan.memberId, payoutAmount);
+    }
+
+    await this.createNotification({
+      type: "plan_cancelled",
+      title: "Savings Plan Cancelled",
+      message: payoutAmount > 0
+        ? `Your savings plan "${plan.planName}" has been cancelled. ₦${payoutAmount.toFixed(2)} has been transferred to your wallet after a ₦${fee.toFixed(2)} fee.`
+        : `Your savings plan "${plan.planName}" has been cancelled.`,
+      memberId: plan.memberId,
+      read: "false",
+    });
+
+    return { plan: updatedPlan, payoutAmount };
+  }
+
+  async deleteSavingsPlan(id: string): Promise<void> {
+    const plan = await db.query.savingsPlans.findFirst({
+      where: eq(savingsPlans.id, id),
+    });
+
+    if (!plan) {
+      throw new Error("Savings plan not found");
+    }
+
+    if (plan.status !== "cancelled") {
+      throw new Error("Only a cancelled plan can be deleted");
+    }
+
+    const linkedLoan = await db.query.loans.findFirst({
+      where: eq(loans.planId, id),
+    });
+
+    if (linkedLoan) {
+      throw new Error("Cannot delete a plan with an associated loan record");
+    }
+
+    await db.delete(savingsPlans).where(eq(savingsPlans.id, id));
   }
 
   async createPlanContribution(insertContribution: InsertPlanContribution): Promise<PlanContribution> {
@@ -1075,11 +1230,43 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(notifications).orderBy(desc(notifications.createdAt));
   }
 
-  async getNotificationsPaginated(page: number, limit: number): Promise<PaginatedResponse<Notification>> {
+  // Shared role/branch scoping: resolves which member ids a user may see records for.
+  // Returns undefined for admin (no filter needed) or an array (possibly empty)
+  // of member ids in scope for manager (branch) / staff (own assigned members).
+  private async getScopedMemberIds(user: { role: string; id: string; branchId: string }): Promise<string[] | undefined> {
+    if (user.role === "admin") {
+      return undefined;
+    }
+
+    let staffIds: string[];
+    if (user.role === "manager") {
+      const branchStaff = await db.select().from(staff).where(eq(staff.branchId, user.branchId));
+      staffIds = branchStaff.map(s => s.id);
+    } else {
+      staffIds = [user.id];
+    }
+
+    if (staffIds.length === 0) {
+      return [];
+    }
+
+    const scopedMembers = await db.select({ id: members.id }).from(members).where(inArray(members.staffId, staffIds));
+    return scopedMembers.map(m => m.id);
+  }
+
+  async getNotificationsPaginated(page: number, limit: number, user: { role: string; id: string; branchId: string }): Promise<PaginatedResponse<Notification>> {
     const offset = (page - 1) * limit;
+    const memberIds = await this.getScopedMemberIds(user);
+
+    if (memberIds && memberIds.length === 0) {
+      return { data: [], total: 0, page, limit, totalPages: 0 };
+    }
+
+    const whereClause = memberIds ? inArray(notifications.memberId, memberIds) : undefined;
+
     const [data, countResult] = await Promise.all([
-      db.select().from(notifications).orderBy(desc(notifications.createdAt)).limit(limit).offset(offset),
-      db.select({ count: sql`count(*)` }).from(notifications),
+      db.select().from(notifications).where(whereClause).orderBy(desc(notifications.createdAt)).limit(limit).offset(offset),
+      db.select({ count: sql`count(*)` }).from(notifications).where(whereClause),
     ]);
     const total = Number(countResult[0]?.count) || 0;
     return {
@@ -1108,11 +1295,21 @@ export class DatabaseStorage implements IStorage {
     return notif;
   }
 
-  async getUnreadNotificationCount(): Promise<number> {
+  async getUnreadNotificationCount(user: { role: string; id: string; branchId: string }): Promise<number> {
+    const memberIds = await this.getScopedMemberIds(user);
+
+    if (memberIds && memberIds.length === 0) {
+      return 0;
+    }
+
+    const whereClause = memberIds
+      ? and(eq(notifications.read, "false"), inArray(notifications.memberId, memberIds))
+      : eq(notifications.read, "false");
+
     const result = await db
       .select()
       .from(notifications)
-      .where(eq(notifications.read, "false"));
+      .where(whereClause);
     return result.length;
   }
 
@@ -1393,12 +1590,20 @@ export class DatabaseStorage implements IStorage {
     return allMembers;
   }
 
-  async getMembersPaginatedByBranch(branchId: string, page: number, limit: number): Promise<PaginatedResponse<Member>> {
-    const branchMembers = await this.getMembersByBranch(branchId);
+  async getMembersPaginatedByBranch(branchId: string, page: number, limit: number, search?: string): Promise<PaginatedResponse<Member>> {
+    let branchMembers = await this.getMembersByBranch(branchId);
+    if (search && search.trim()) {
+      const term = search.trim().toLowerCase();
+      branchMembers = branchMembers.filter(m =>
+        m.name.toLowerCase().includes(term) ||
+        m.email?.toLowerCase().includes(term) ||
+        m.phone?.toLowerCase().includes(term)
+      );
+    }
     const total = branchMembers.length;
     const offset = (page - 1) * limit;
     const data = branchMembers.slice(offset, offset + limit);
-    
+
     return {
       data,
       total,
@@ -1423,8 +1628,16 @@ export class DatabaseStorage implements IStorage {
     return member.staff.branchId === branchId;
   }
 
-  async getMembersPaginatedByStaff(staffId: string, page: number, limit: number): Promise<PaginatedResponse<Member>> {
-    const staffMembers = await db.select().from(members).where(eq(members.staffId, staffId)).orderBy(desc(members.joinDate));
+  async getMembersPaginatedByStaff(staffId: string, page: number, limit: number, search?: string): Promise<PaginatedResponse<Member>> {
+    let staffMembers = await db.select().from(members).where(eq(members.staffId, staffId)).orderBy(desc(members.joinDate));
+    if (search && search.trim()) {
+      const term = search.trim().toLowerCase();
+      staffMembers = staffMembers.filter(m =>
+        m.name.toLowerCase().includes(term) ||
+        m.email?.toLowerCase().includes(term) ||
+        m.phone?.toLowerCase().includes(term)
+      );
+    }
     const total = staffMembers.length;
     const offset = (page - 1) * limit;
     const data = staffMembers.slice(offset, offset + limit);
@@ -1863,10 +2076,33 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
-  async getYearlyPlansPaginated(page: number, limit: number): Promise<PaginatedResponse<YearlySavingsPlan>> {
+  async getYearlyPlansPaginated(page: number, limit: number, user: { role: string; id: string; branchId: string }, search?: string): Promise<PaginatedResponse<YearlySavingsPlan>> {
     const offset = (page - 1) * limit;
+    const scopedMemberIds = await this.getScopedMemberIds(user);
+    if (scopedMemberIds && scopedMemberIds.length === 0) {
+      return { data: [], total: 0, page, limit, totalPages: 0 };
+    }
+
+    const conditions = [];
+    if (scopedMemberIds) {
+      conditions.push(inArray(yearlySavingsPlans.memberId, scopedMemberIds));
+    }
+    if (search && search.trim()) {
+      const term = `%${search.trim()}%`;
+      const matchingMembers = await db.select({ id: members.id }).from(members).where(ilike(members.name, term));
+      const matchingMemberIds = matchingMembers.map(m => m.id);
+      conditions.push(
+        matchingMemberIds.length > 0
+          ? or(ilike(yearlySavingsPlans.planName, term), inArray(yearlySavingsPlans.memberId, matchingMemberIds))
+          : ilike(yearlySavingsPlans.planName, term)
+      );
+    }
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
     const [data, totalResult] = await Promise.all([
       db.query.yearlySavingsPlans.findMany({
+        where: whereClause,
         limit,
         offset,
         orderBy: desc(yearlySavingsPlans.createdAt),
@@ -1874,7 +2110,7 @@ export class DatabaseStorage implements IStorage {
           member: true,
         },
       }),
-      db.select({ count: sql<number>`count(*)::int` }).from(yearlySavingsPlans),
+      db.select({ count: sql<number>`count(*)::int` }).from(yearlySavingsPlans).where(whereClause),
     ]);
 
     const total = totalResult[0].count;
@@ -1895,9 +2131,15 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createYearlySavingsPlan(plan: InsertYearlySavingsPlan): Promise<YearlySavingsPlan> {
+    const startDate = new Date(plan.startDate);
+    const maxDays = plan.maxDays || 372;
+    const maturityDate = new Date(startDate);
+    maturityDate.setDate(maturityDate.getDate() + maxDays);
+
     const planData = {
       ...plan,
-      maturityDate: new Date(plan.maturityDate),
+      startDate,
+      maturityDate,
     };
     const [newPlan] = await db.insert(yearlySavingsPlans).values(planData).returning();
     return newPlan;

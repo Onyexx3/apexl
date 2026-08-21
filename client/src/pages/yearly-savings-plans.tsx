@@ -33,9 +33,9 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertYearlySavingsPlanSchema, type InsertYearlySavingsPlan, type YearlySavingsPlan, type Member } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, invalidateAllQueries } from "@/lib/queryClient";
 import { Link } from "wouter";
-import { format } from "date-fns";
+import { format, addDays } from "date-fns";
 
 interface PaginatedPlans {
   data: YearlySavingsPlan[];
@@ -60,9 +60,9 @@ export default function YearlySavingsPlans() {
   const { toast } = useToast();
 
   const { data: response, isLoading: plansLoading } = useQuery<PaginatedPlans>({
-    queryKey: ["/api/yearly-savings-plans", page],
+    queryKey: ["/api/yearly-savings-plans", page, searchQuery],
     queryFn: async () => {
-      const res = await fetch(`/api/yearly-savings-plans?page=${page}&limit=10`);
+      const res = await fetch(`/api/yearly-savings-plans?page=${page}&limit=10&search=${encodeURIComponent(searchQuery)}`);
       return res.json();
     },
   });
@@ -89,16 +89,22 @@ export default function YearlySavingsPlans() {
       maxContributions: 372,
       maxDays: 372,
       profitRate: "5.00",
-      maturityDate: new Date(Date.now() + 372 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      startDate: format(new Date(), "yyyy-MM-dd"),
     },
   });
+
+  const watchedStartDate = form.watch("startDate");
+  const watchedMaxDays = form.watch("maxDays");
+  const computedMaturityDate = watchedStartDate
+    ? format(addDays(new Date(watchedStartDate), watchedMaxDays || 372), "MMM dd, yyyy")
+    : "";
 
   const createMutation = useMutation({
     mutationFn: async (data: InsertYearlySavingsPlan) => {
       return apiRequest("POST", "/api/yearly-savings-plans", data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/yearly-savings-plans"] });
+      invalidateAllQueries();
       toast({
         title: "Yearly savings plan created",
         description: "New yearly savings plan has been created successfully.",
@@ -119,10 +125,8 @@ export default function YearlySavingsPlans() {
     createMutation.mutate(data);
   };
 
-  const filteredPlans = Array.isArray(plans) ? plans.filter((plan) => {
-    const member = Array.isArray(members) ? members.find((m) => m.id === plan.memberId) : undefined;
-    return member?.name.toLowerCase().includes(searchQuery.toLowerCase());
-  }) : [];
+  // Search (by plan name or member name) is applied server-side, scoped to this user's role.
+  const filteredPlans = Array.isArray(plans) ? plans : [];
 
   const maturedPlans = Array.isArray(plans) ? plans.filter((plan) => plan.status === "matured") : [];
 
@@ -152,9 +156,12 @@ export default function YearlySavingsPlans() {
             <div className="relative w-full sm:w-64">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
-                placeholder="Search by member..."
+                placeholder="Search by plan or member..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setPage(1);
+                }}
                 className="pl-9"
                 data-testid="input-search-plans"
               />
@@ -273,6 +280,13 @@ export default function YearlySavingsPlans() {
                 );
               })}
             </div>
+          )}
+          {response && response.totalPages > 1 && (
+            <Pagination
+              currentPage={page}
+              totalPages={response.totalPages}
+              onPageChange={setPage}
+            />
           )}
         </CardContent>
       </Card>
@@ -461,21 +475,30 @@ export default function YearlySavingsPlans() {
                 />
                 <FormField
                   control={form.control}
-                  name="maturityDate"
+                  name="startDate"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Maturity Date *</FormLabel>
+                      <FormLabel>Start Date *</FormLabel>
                       <FormControl>
                         <Input
                           type="date"
                           {...field}
-                          data-testid="input-maturity-date"
+                          data-testid="input-start-date"
                         />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
+              </div>
+              <div className="space-y-2">
+                <FormLabel>Maturity Date</FormLabel>
+                <div className="flex items-center gap-2 p-2 border rounded-md bg-muted/50">
+                  <Calendar className="w-4 h-4 text-muted-foreground" />
+                  <span className="text-sm" data-testid="text-maturity-date">
+                    {computedMaturityDate || "Select a start date"} ({watchedMaxDays || 372} days from start)
+                  </span>
+                </div>
               </div>
               <div className="flex justify-end gap-3 pt-4">
                 <Button

@@ -558,7 +558,6 @@ export const insertDynamicSavingsPlanContributionSchema = createInsertSchema(dyn
 export const insertSavingsPlanSchema = createInsertSchema(savingsPlans).omit({
   id: true,
   contributionsCount: true,
-  startDate: true,
   completedDate: true,
   totalSaved: true,
   createdAt: true,
@@ -573,6 +572,7 @@ export const insertSavingsPlanSchema = createInsertSchema(savingsPlans).omit({
   contributionAmount: z.string().min(1, "Contribution amount is required").refine((val) => !isNaN(Number(val)) && Number(val) > 0, {
     message: "Contribution amount must be a positive number",
   }),
+  startDate: z.string().min(1, "Start date is required"),
   maxContributions: z.number().int().positive().default(31),
   maxDays: z.number().int().positive().default(62),
 });
@@ -596,7 +596,7 @@ export const insertPlanContributionSchema = createInsertSchema(planContributions
 export const insertYearlySavingsPlanSchema = createInsertSchema(yearlySavingsPlans).omit({
   id: true,
   contributionsCount: true,
-  startDate: true,
+  maturityDate: true,
   completedDate: true,
   totalSaved: true,
   profitEarned: true,
@@ -613,12 +613,12 @@ export const insertYearlySavingsPlanSchema = createInsertSchema(yearlySavingsPla
   contributionAmount: z.string().min(1, "Contribution amount is required").refine((val) => !isNaN(Number(val)) && Number(val) > 0, {
     message: "Contribution amount must be a positive number",
   }),
+  startDate: z.string().min(1, "Start date is required"),
   maxContributions: z.number().int().positive().default(372),
   maxDays: z.number().int().positive().default(372),
   profitRate: z.string().refine((val) => !isNaN(Number(val)) && Number(val) >= 0, {
     message: "Profit rate must be zero or positive",
   }).default("5.00"),
-  maturityDate: z.string().min(1, "Maturity date is required"),
 });
 
 export const insertYearlyPlanContributionSchema = createInsertSchema(yearlyPlanContributions).omit({

@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
+import { useMutation } from "@tanstack/react-query";
+import { apiRequest, invalidateAllQueries } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import {
   Dialog,
@@ -35,7 +35,6 @@ export function OverflowContributionDialog({
   onSuccess,
 }: OverflowContributionDialogProps) {
   const { toast } = useToast();
-  const queryClient = useQueryClient();
   const [planName, setPlanName] = useState(`${memberName}'s New Savings Plan`);
 
   const createPlanMutation = useMutation({
@@ -59,8 +58,7 @@ export function OverflowContributionDialog({
         });
       }
       
-      queryClient.invalidateQueries({ queryKey: ["/api/savings-plans"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/members", memberId, "plans"] });
+      invalidateAllQueries();
       
       toast({
         title: "New Plan Created",

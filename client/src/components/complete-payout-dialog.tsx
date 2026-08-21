@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
+import { useMutation } from "@tanstack/react-query";
+import { apiRequest, invalidateAllQueries } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import {
   Dialog,
@@ -74,7 +74,6 @@ export function CompletePayoutDialog({
   onSuccess,
 }: CompletePayoutDialogProps) {
   const { toast } = useToast();
-  const queryClient = useQueryClient();
   const [payoutDestination, setPayoutDestination] = useState("");
   const [payoutBankName, setPayoutBankName] = useState("");
   const [payoutAccountNumber, setPayoutAccountNumber] = useState("");
@@ -91,9 +90,7 @@ export function CompletePayoutDialog({
       return await res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/transactions/payouts"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+      invalidateAllQueries();
       
       toast({
         title: "Payout Completed",

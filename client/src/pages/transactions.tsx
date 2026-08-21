@@ -42,27 +42,28 @@ export default function Transactions() {
   const [page, setPage] = useState(1);
 
   const { data: response, isLoading } = useQuery<PaginatedTransactions>({
-    queryKey: ["/api/transactions", page],
+    queryKey: ["/api/transactions", page, searchQuery],
     queryFn: async () => {
-      const res = await fetch(`/api/transactions?page=${page}&limit=10`);
+      const res = await fetch(`/api/transactions?page=${page}&limit=10&search=${encodeURIComponent(searchQuery)}`);
       return res.json();
     },
   });
 
   const transactions = response?.data || [];
 
+  // Member-name search is applied server-side (scoped to this user's role); type/status
+  // remain client-side filters on the loaded page.
   const filteredTransactions = transactions?.filter((transaction) => {
-    const matchesSearch =
-      transaction.member?.name.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesType = typeFilter === "all" || transaction.type === typeFilter;
     const matchesStatus = statusFilter === "all" || transaction.status === statusFilter;
-    return matchesSearch && matchesType && matchesStatus;
+    return matchesType && matchesStatus;
   });
 
   const clearFilters = () => {
     setSearchQuery("");
     setTypeFilter("all");
     setStatusFilter("all");
+    setPage(1);
   };
 
   const downloadReceipt = (transactionId: string) => {
@@ -129,7 +130,10 @@ export default function Transactions() {
                 <Input
                   placeholder="Search by member..."
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    setPage(1);
+                  }}
                   className="pl-9"
                   data-testid="input-search-transactions"
                 />

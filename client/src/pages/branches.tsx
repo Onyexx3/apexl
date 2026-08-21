@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { invalidateAllQueries } from "@/lib/queryClient";
 import { Plus, Pencil, Trash2, Building2, Users, Info } from "lucide-react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -67,7 +68,6 @@ export default function Branches() {
   });
 
   const { toast } = useToast();
-  const queryClient = useQueryClient();
 
   const { data: branches, isLoading } = useQuery<PaginatedResponse<Branch>>({
     queryKey: ["/api/branches", page],
@@ -92,7 +92,7 @@ export default function Branches() {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/branches"] });
+      invalidateAllQueries();
       toast({ title: "Branch created successfully" });
       handleCloseDialog();
     },
@@ -115,7 +115,7 @@ export default function Branches() {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/branches"] });
+      invalidateAllQueries();
       toast({ title: "Branch updated successfully" });
       handleCloseDialog();
     },
@@ -133,7 +133,7 @@ export default function Branches() {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/branches"] });
+      invalidateAllQueries();
       toast({ title: "Branch deleted successfully" });
       setDeleteDialogOpen(false);
       setSelectedBranch(null);
@@ -276,7 +276,7 @@ export default function Branches() {
               {branches && branches.totalPages > 1 && (
                 <div className="mt-4">
                   <Pagination
-                    page={page}
+                    currentPage={page}
                     totalPages={branches.totalPages}
                     onPageChange={setPage}
                   />

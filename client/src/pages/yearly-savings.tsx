@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { insertYearlyPlanContributionSchema, type InsertYearlyPlanContribution, type Member, type YearlySavingsPlan } from "@shared/schema";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, invalidateAllQueries } from "@/lib/queryClient";
 import { DollarSign, CalendarIcon, TrendingUp, Clock } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
@@ -98,8 +98,7 @@ export default function YearlySavings() {
     },
     onSuccess: (response: any) => {
       const count = response?.count || 1;
-      queryClient.invalidateQueries({ queryKey: ["/api/members", selectedMemberId, "yearly-plans"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+      invalidateAllQueries();
       toast({
         title: "Yearly savings recorded",
         description: `${count} yearly contributions have been recorded (${count} timeline slots updated).`,

@@ -298,17 +298,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const page = Math.max(1, parseInt(req.query.page as string) || 1);
       const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 10));
-      
+      const search = req.query.search as string | undefined;
+
       const user = req.user!;
-      
+
       if (user.role === "admin") {
-        const paginated = await storage.getMembersPaginated(page, limit);
+        const paginated = await storage.getMembersPaginated(page, limit, search);
         res.json(paginated);
       } else if (user.role === "manager") {
-        const paginated = await storage.getMembersPaginatedByBranch(user.branchId, page, limit);
+        const paginated = await storage.getMembersPaginatedByBranch(user.branchId, page, limit, search);
         res.json(paginated);
       } else {
-        const paginated = await storage.getMembersPaginatedByStaff(user.id, page, limit);
+        const paginated = await storage.getMembersPaginatedByStaff(user.id, page, limit, search);
         res.json(paginated);
       }
     } catch (error: any) {
@@ -404,7 +405,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const page = Math.max(1, parseInt(req.query.page as string) || 1);
       const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 10));
-      const paginated = await storage.getTransactionsPaginated(page, limit);
+      const search = req.query.search as string | undefined;
+      const paginated = await storage.getTransactionsPaginated(page, limit, req.user!, search);
       res.json(paginated);
     } catch (error: any) {
       res.status(500).json({ message: error.message || "Failed to fetch transactions" });
@@ -413,7 +415,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/transactions/recent", requireAuth, async (req, res) => {
     try {
-      const transactions = await storage.getRecentTransactions(10);
+      const transactions = await storage.getRecentTransactions(10, req.user!);
       res.json(transactions);
     } catch (error: any) {
       res.status(500).json({ message: error.message || "Failed to fetch recent transactions" });
@@ -424,7 +426,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const page = Math.max(1, parseInt(req.query.page as string) || 1);
       const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 10));
-      const paginated = await storage.getPayoutsPaginated(page, limit);
+      const search = req.query.search as string | undefined;
+      const paginated = await storage.getPayoutsPaginated(page, limit, req.user!, search);
       res.json(paginated);
     } catch (error: any) {
       res.status(500).json({ message: error.message || "Failed to fetch payouts" });
@@ -606,7 +609,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const page = Math.max(1, parseInt(req.query.page as string) || 1);
       const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 10));
-      const paginated = await storage.getPlansPaginated(page, limit);
+      const search = req.query.search as string | undefined;
+      const paginated = await storage.getPlansPaginated(page, limit, req.user!, search);
       res.json(paginated);
     } catch (error: any) {
       res.status(500).json({ message: error.message || "Failed to fetch savings plans" });
@@ -708,6 +712,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.patch("/api/plans/:id/close", requireAuth, async (req, res) => {
+    try {
+      const { plan, payoutAmount } = await storage.cancelSavingsPlan(req.params.id);
+      res.json({ plan, payoutAmount });
+    } catch (error: any) {
+      res.status(400).json({ message: error.message || "Failed to cancel savings plan" });
+    }
+  });
+
+  app.delete("/api/plans/:id", requireRole("admin"), async (req, res) => {
+    try {
+      await storage.deleteSavingsPlan(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(400).json({ message: error.message || "Failed to delete savings plan" });
+    }
+  });
+
   app.post("/api/wallet/:memberId/withdraw", requireAuth, async (req, res) => {
     try {
       const { amount } = req.body;
@@ -726,7 +748,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const page = Math.max(1, parseInt(req.query.page as string) || 1);
       const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 10));
-      const paginated = await storage.getYearlyPlansPaginated(page, limit);
+      const search = req.query.search as string | undefined;
+      const paginated = await storage.getYearlyPlansPaginated(page, limit, req.user!, search);
       res.json(paginated);
     } catch (error: any) {
       res.status(500).json({ message: error.message || "Failed to fetch yearly savings plans" });
@@ -916,7 +939,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const page = Math.max(1, parseInt(req.query.page as string) || 1);
       const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 10));
-      const paginated = await storage.getNotificationsPaginated(page, limit);
+      const paginated = await storage.getNotificationsPaginated(page, limit, req.user!);
       res.json(paginated);
     } catch (error: any) {
       res.status(500).json({ message: error.message || "Failed to fetch notifications" });
@@ -925,7 +948,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/notifications/unread/count", requireAuth, async (req, res) => {
     try {
-      const count = await storage.getUnreadNotificationCount();
+      const count = await storage.getUnreadNotificationCount(req.user!);
       res.json({ count });
     } catch (error: any) {
       res.status(500).json({ message: error.message || "Failed to fetch unread count" });

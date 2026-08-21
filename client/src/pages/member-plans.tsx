@@ -19,7 +19,9 @@ import { ArrowLeft, Target, Banknote } from "lucide-react";
 import type { MemberWithTransactions, SavingsPlan } from "@shared/schema";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useAuth } from "@/hooks/use-auth";
+import { apiRequest, invalidateAllQueries } from "@/lib/queryClient";
+import { getPlanMaxContributions } from "@/lib/savingsPlan";
 
 export default function MemberPlans() {
   const [, params] = useRoute("/members/:memberId/plans");
@@ -119,19 +121,21 @@ export default function MemberPlans() {
 
 function PlanCard({ plan, memberId }: { plan: SavingsPlan; memberId?: string }) {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [borrowDialog, setBorrowDialog] = useState(false);
   const [borrowAmount, setBorrowAmount] = useState("");
-  
+
   const statusColor = plan.status === "active" ? "default" : plan.status === "completed" ? "secondary" : "outline";
-  const progress = (plan.contributionsCount / plan.maxContributions) * 100;
+  const maxContributions = getPlanMaxContributions(plan);
+  const progress = (plan.contributionsCount / maxContributions) * 100;
   const maxBorrowable = parseFloat(plan.totalSaved) * 0.5;
-  
+
   const closePlanMutation = useMutation({
     mutationFn: async () => {
       return apiRequest("PATCH", `/api/plans/${plan.id}/close`, {});
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/members", memberId, "plans"] });
+      invalidateAllQueries();
       toast({
         title: "Plan closed",
         description: "Savings plan has been closed and funds transferred to wallet.",
@@ -146,6 +150,26 @@ function PlanCard({ plan, memberId }: { plan: SavingsPlan; memberId?: string }) 
     },
   });
 
+  const deletePlanMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest("DELETE", `/api/plans/${plan.id}`, undefined);
+    },
+    onSuccess: () => {
+      invalidateAllQueries();
+      toast({
+        title: "Plan deleted",
+        description: "Cancelled savings plan has been permanently deleted.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete plan.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const borrowMutation = useMutation({
     mutationFn: async () => {
       return apiRequest("POST", `/api/loans`, {
@@ -155,8 +179,7 @@ function PlanCard({ plan, memberId }: { plan: SavingsPlan; memberId?: string }) 
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/loans"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/members", memberId, "plans"] });
+      invalidateAllQueries();
       setBorrowDialog(false);
       setBorrowAmount("");
       toast({
@@ -206,7 +229,7 @@ function PlanCard({ plan, memberId }: { plan: SavingsPlan; memberId?: string }) 
           <div className="space-y-2">
             <div className="flex justify-between items-center">
               <p className="text-sm font-medium">Progress</p>
-              <p className="text-sm text-muted-foreground">{plan.contributionsCount}/{plan.maxContributions} days</p>
+              <p className="text-sm text-muted-foreground">{plan.contributionsCount}/{maxContributions} days</p>
             </div>
             <div className="w-full bg-muted rounded-full h-3 overflow-hidden">
               <div
@@ -250,17 +273,31 @@ function PlanCard({ plan, memberId }: { plan: SavingsPlan; memberId?: string }) 
               </Button>
             )}
             {plan.status === "active" && (
-              <Button 
+              <Button
                 className="flex-1"
                 variant="destructive"
                 onClick={() => {
-                  if (confirm("Close this savings plan? Remaining balance will be transferred to wallet.")) {
+                  if (confirm("Close this savings plan? Remaining balance (minus a one-contribution fee) will be transferred to wallet.")) {
                     closePlanMutation.mutate();
                   }
                 }}
                 disabled={closePlanMutation.isPending}
               >
                 {closePlanMutation.isPending ? "Closing..." : "Close Plan"}
+              </Button>
+            )}
+            {plan.status === "cancelled" && user?.role === "admin" && (
+              <Button
+                className="flex-1"
+                variant="destructive"
+                onClick={() => {
+                  if (confirm("Permanently delete this cancelled plan? This cannot be undone.")) {
+                    deletePlanMutation.mutate();
+                  }
+                }}
+                disabled={deletePlanMutation.isPending}
+              >
+                {deletePlanMutation.isPending ? "Deleting..." : "Delete Plan"}
               </Button>
             )}
           </div>

@@ -25,7 +25,7 @@ import {
 import { Banknote, Check, X, DollarSign, Info } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, invalidateAllQueries } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { Pagination } from "@/components/pagination";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -55,7 +55,11 @@ export default function Loans() {
   const [repayAmount, setRepayAmount] = useState("");
 
   const { data: loansData, isLoading } = useQuery<PaginatedResponse<LoanWithDetails>>({
-    queryKey: ["/api/loans", { page, limit: 10 }],
+    queryKey: ["/api/loans", page],
+    queryFn: async () => {
+      const res = await fetch(`/api/loans?page=${page}&limit=10`);
+      return res.json();
+    },
   });
 
   const approveMutation = useMutation({
@@ -63,7 +67,7 @@ export default function Loans() {
       return apiRequest("PATCH", `/api/loans/${loanId}/approve`, {});
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/loans"] });
+      invalidateAllQueries();
       toast({
         title: "Loan approved",
         description: "The loan has been approved and credited to the member's wallet.",
@@ -83,7 +87,7 @@ export default function Loans() {
       return apiRequest("PATCH", `/api/loans/${loanId}/reject`, {});
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/loans"] });
+      invalidateAllQueries();
       toast({
         title: "Loan rejected",
         description: "The loan request has been rejected.",
@@ -103,7 +107,7 @@ export default function Loans() {
       return apiRequest("POST", `/api/loans/${loanId}/repay`, { amount });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/loans"] });
+      invalidateAllQueries();
       setRepayDialog({ open: false, loan: null });
       setRepayAmount("");
       toast({

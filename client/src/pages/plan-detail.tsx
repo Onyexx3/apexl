@@ -41,7 +41,8 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertPlanContributionSchema, type InsertPlanContribution, type SavingsPlan, type PlanContribution, type Member } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, invalidateAllQueries } from "@/lib/queryClient";
+import { getPlanMaxContributions } from "@/lib/savingsPlan";
 import { format, differenceInDays } from "date-fns";
 import { OverflowContributionDialog } from "@/components/overflow-contribution-dialog";
 
@@ -90,9 +91,7 @@ export default function PlanDetail() {
       return await res.json() as ContributionResult;
     },
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/savings-plans", planId] });
-      queryClient.invalidateQueries({ queryKey: ["/api/members", memberId, "plans"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+      invalidateAllQueries();
       
       if (result.overflowAmount > 0 && result.remainingSlots === 0) {
         setOverflowAmount(result.overflowAmount);
@@ -126,8 +125,7 @@ export default function PlanDetail() {
       return await res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/savings-plans", planId] });
-      queryClient.invalidateQueries({ queryKey: ["/api/transactions/payouts"] });
+      invalidateAllQueries();
       toast({
         title: "Payout Requested",
         description: "Payout request has been submitted. Staff will process it shortly.",
@@ -171,20 +169,15 @@ export default function PlanDetail() {
     );
   }
 
-  const getCorrectMaxContributions = (plan: SavingsPlan) => {
-    // For daily savings plans, always show 31 days (monthly limit)
-    // regardless of what was set in the database
-    return 31;
-  };
 
-  const progressPercent = (plan.contributionsCount / getCorrectMaxContributions(plan)) * 100;
-  const remainingSlots = getCorrectMaxContributions(plan) - plan.contributionsCount;
+  const progressPercent = (plan.contributionsCount / getPlanMaxContributions(plan)) * 100;
+  const remainingSlots = getPlanMaxContributions(plan) - plan.contributionsCount;
   const daysSinceStart = differenceInDays(new Date(), new Date(plan.startDate));
   const slotsRemaining = Math.max(0, 31 - plan.contributionsCount);
   const isCompleted = plan.status === "completed" || plan.status === "closed";
   const canRequestPayout = isCompleted && plan.payoutStatus !== "completed" && plan.payoutStatus !== "requested";
 
-  const timelineSlots = Array.from({ length: getCorrectMaxContributions(plan) }, (_, i) => {
+  const timelineSlots = Array.from({ length: getPlanMaxContributions(plan) }, (_, i) => {
     const contribution = plan.contributions?.find(c => c.contributionNumber === i + 1);
     return {
       number: i + 1,
@@ -250,7 +243,7 @@ export default function PlanDetail() {
             <div className="pt-4 border-t space-y-3">
               <div className="flex justify-between items-center">
                 <span className="text-sm font-medium">Timeline Progress</span>
-                <span className="text-sm text-muted-foreground">{plan.contributionsCount}/{getCorrectMaxContributions(plan)} slots</span>
+                <span className="text-sm text-muted-foreground">{plan.contributionsCount}/{getPlanMaxContributions(plan)} slots</span>
               </div>
               <div className="w-full bg-muted rounded-full h-2">
                 <div

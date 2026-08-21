@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { invalidateAllQueries } from "@/lib/queryClient";
 import { useRoute, Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -28,7 +29,6 @@ export default function MemberInvestments() {
   const [, params] = useRoute("/members/:memberId/investments");
   const memberId = params?.memberId;
   const { toast } = useToast();
-  const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [formData, setFormData] = useState({
     investmentTypeId: "",
@@ -79,7 +79,7 @@ export default function MemberInvestments() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/investments"] });
+      invalidateAllQueries();
       toast({ title: "Investment created successfully" });
       resetForm();
       setIsDialogOpen(false);

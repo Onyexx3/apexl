@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { invalidateAllQueries } from "@/lib/queryClient";
 import { Plus, Pencil, Trash2, UserCheck, Building2, Camera, Upload, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -70,7 +71,6 @@ export default function Staff() {
   });
 
   const { toast } = useToast();
-  const queryClient = useQueryClient();
 
   const { data: staffList, isLoading } = useQuery<PaginatedResponse<StaffWithBranch>>({
     queryKey: ["/api/staff", page],
@@ -114,7 +114,7 @@ export default function Staff() {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/staff"] });
+      invalidateAllQueries();
       toast({ title: "Staff member created successfully" });
       handleCloseDialog();
     },
@@ -137,7 +137,7 @@ export default function Staff() {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/staff"] });
+      invalidateAllQueries();
       toast({ title: "Staff member updated successfully" });
       handleCloseDialog();
     },
@@ -155,7 +155,7 @@ export default function Staff() {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/staff"] });
+      invalidateAllQueries();
       toast({ title: "Staff member deleted successfully" });
       setDeleteDialogOpen(false);
       setSelectedStaff(null);
@@ -341,7 +341,7 @@ export default function Staff() {
               {staffList && staffList.totalPages > 1 && (
                 <div className="mt-4">
                   <Pagination
-                    page={page}
+                    currentPage={page}
                     totalPages={staffList.totalPages}
                     onPageChange={setPage}
                   />
