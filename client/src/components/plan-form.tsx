@@ -113,7 +113,6 @@ export function PlanForm({ memberId, onPlanCreated }: PlanFormProps) {
       memberId: memberId || "",
       investmentTypeId: "",
       amount: "",
-      interestRate: "",
       status: "active",
       notes: "",
       startDate: format(new Date(), "yyyy-MM-dd"),
@@ -186,7 +185,6 @@ export function PlanForm({ memberId, onPlanCreated }: PlanFormProps) {
     if (investmentType) {
       setSelectedInvestmentType(investmentType);
       investmentForm.setValue("investmentTypeId", investmentTypeId);
-      investmentForm.setValue("interestRate", investmentType.interestRate.toString());
     }
   };
 
@@ -559,19 +557,14 @@ export function PlanForm({ memberId, onPlanCreated }: PlanFormProps) {
                     )}
                   />
 
-                  <FormField
-                    control={investmentForm.control}
-                    name="interestRate"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Interest Rate (%)</FormLabel>
-                        <FormControl>
-                          <Input placeholder="10.0" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                  <div className="space-y-2">
+                    <Label>Interest Rate (%)</Label>
+                    <div className="flex items-center p-2 border rounded-md bg-muted/50">
+                      <span className="text-sm">
+                        {selectedInvestmentType ? `${selectedInvestmentType.interestRate}% (set by investment type)` : "Select investment type"}
+                      </span>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">

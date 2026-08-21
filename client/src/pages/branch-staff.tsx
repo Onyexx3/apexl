@@ -493,21 +493,25 @@ export default function BranchStaff() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="role">Role</Label>
-                <Select
-                  value={formData.role}
-                  onValueChange={(value: "manager" | "collector" | "admin") =>
-                    setFormData({ ...formData, role: value })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="collector">Field Staff</SelectItem>
-                    <SelectItem value="manager">Manager</SelectItem>
-                    <SelectItem value="admin">Admin</SelectItem>
-                  </SelectContent>
-                </Select>
+                {currentUser?.role === "admin" ? (
+                  <Select
+                    value={formData.role}
+                    onValueChange={(value: "manager" | "collector" | "admin") =>
+                      setFormData({ ...formData, role: value })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="collector">Field Staff</SelectItem>
+                      <SelectItem value="manager">Manager</SelectItem>
+                      <SelectItem value="admin">Admin</SelectItem>
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input id="role" value={formData.role} disabled />
+                )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="status">Status</Label>

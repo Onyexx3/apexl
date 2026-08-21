@@ -68,7 +68,7 @@ export interface IStorage {
   getRecentTransactions(limit: number): Promise<TransactionWithMember[]>;
   getTransactionsByType(type: string): Promise<TransactionWithMember[]>;
   getPayoutsPaginated(page: number, limit: number): Promise<PaginatedResponse<TransactionWithMember>>;
-  createTransaction(transaction: InsertTransaction): Promise<Transaction>;
+  createTransaction(transaction: InsertTransaction, skipWalletUpdate?: boolean): Promise<Transaction>;
   updateTransactionStatus(id: string, status: string): Promise<Transaction>;
   completePayoutTransaction(id: string, payoutDetails: { payoutDestination: string; payoutAccountNumber: string; payoutAccountName: string; payoutBankName: string; processedBy: string }): Promise<Transaction>;
 
@@ -465,7 +465,7 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
-  async createTransaction(insertTransaction: InsertTransaction): Promise<Transaction> {
+  async createTransaction(insertTransaction: InsertTransaction, skipWalletUpdate = false): Promise<Transaction> {
     const amount = parseFloat(insertTransaction.amount);
     const memberId = insertTransaction.memberId;
     const type = insertTransaction.type;
@@ -484,6 +484,7 @@ export class DatabaseStorage implements IStorage {
         .set({
           totalSavings: sql`${members.totalSavings} + ${amount}`,
           balance: sql`${members.balance} + ${amount}`,
+          ...(skipWalletUpdate ? {} : { walletBalance: sql`${members.walletBalance} + ${amount}` }),
         })
         .where(eq(members.id, memberId));
     } else if (type === "payout" && insertTransaction.status === "completed") {
@@ -492,6 +493,7 @@ export class DatabaseStorage implements IStorage {
         .set({
           totalPayouts: sql`${members.totalPayouts} + ${amount}`,
           balance: sql`${members.balance} - ${amount}`,
+          ...(skipWalletUpdate ? {} : { walletBalance: sql`${members.walletBalance} - ${amount}` }),
         })
         .where(eq(members.id, memberId));
     }
@@ -521,6 +523,7 @@ export class DatabaseStorage implements IStorage {
         .set({
           totalPayouts: sql`${members.totalPayouts} + ${amount}`,
           balance: sql`${members.balance} - ${amount}`,
+          walletBalance: sql`${members.walletBalance} - ${amount}`,
         })
         .where(eq(members.id, transaction.memberId));
     }
@@ -1698,7 +1701,7 @@ export class DatabaseStorage implements IStorage {
       throw new Error(`Minimum deposit is ₦${minDeposit.toFixed(2)}`);
     }
 
-    const interestRate = insertData.interestRate ? parseFloat(insertData.interestRate) : parseFloat(investmentType.interestRate);
+    const interestRate = parseFloat(investmentType.interestRate);
     const expectedReturn = amount + (amount * interestRate * investmentType.durationDays / 365 / 100);
 
     const maturityDate = new Date();
@@ -1774,6 +1777,10 @@ export class DatabaseStorage implements IStorage {
 
     if (investment.status !== "active") {
       throw new Error("Investment is not active");
+    }
+
+    if (new Date() < new Date(investment.maturityDate)) {
+      throw new Error(`Investment has not reached its maturity date (${new Date(investment.maturityDate).toDateString()})`);
     }
 
     const expectedReturn = parseFloat(investment.expectedReturn);
@@ -2013,24 +2020,26 @@ export class DatabaseStorage implements IStorage {
     if (isComplete || isExpired) {
       // Calculate full profit for matured plan
       const profitCalculation = await this.calculateYearlyPlanProfit(planId);
-      
+      const alreadyPaidMonthly = parseFloat(plan.monthlyProfitPaid);
+      const remainingProfit = Math.max(0, parseFloat(profitCalculation.fullProfitEarned) - alreadyPaidMonthly);
+
       await db.update(yearlySavingsPlans)
         .set({
           status: "matured",
           completedDate: new Date(),
-          profitEarned: profitCalculation.fullProfitEarned, // Full profit at maturity
+          profitEarned: profitCalculation.fullProfitEarned, // Full profit ever earned (monthly + maturity combined)
         })
         .where(eq(yearlySavingsPlans.id, planId));
 
-      // Transfer total amount + full profit to wallet
-      const totalWithProfit = parseFloat(profitCalculation.fullProfitEarned) + parseFloat(plan.totalSaved);
+      // Transfer total amount + remaining profit (full profit minus what was already paid monthly) to wallet
+      const totalWithProfit = remainingProfit + parseFloat(plan.totalSaved);
       await this.addToWallet(plan.memberId, totalWithProfit);
 
       // Create notification
       await this.createNotification({
         type: "yearly_plan_matured",
         title: "Yearly Savings Plan Matured",
-        message: `Your yearly savings plan "${plan.planName}" has matured. ₦${totalWithProfit.toFixed(2)} (including ₦${profitCalculation.fullProfitEarned} profit) has been transferred to your wallet.`,
+        message: `Your yearly savings plan "${plan.planName}" has matured. ₦${totalWithProfit.toFixed(2)} (including ₦${remainingProfit.toFixed(2)} remaining profit) has been transferred to your wallet.`,
         memberId: plan.memberId,
         read: "false",
       });
@@ -2199,14 +2208,20 @@ export class DatabaseStorage implements IStorage {
       const completedMonths = Math.floor(plan.contributionsCount / 31);
       if (completedMonths > 0) {
         const profitCalculation = await this.calculateYearlyPlanProfit(plan.id);
-        const monthlyProfit = parseFloat(profitCalculation.monthlyProfitEarned);
-        if (monthlyProfit > 0) {
-          await this.addToWallet(plan.memberId, monthlyProfit);
-          
+        const cumulativeMonthlyProfit = parseFloat(profitCalculation.monthlyProfitEarned);
+        const alreadyPaid = parseFloat(plan.monthlyProfitPaid);
+        const incrementalProfit = cumulativeMonthlyProfit - alreadyPaid;
+        if (incrementalProfit > 0) {
+          await this.addToWallet(plan.memberId, incrementalProfit);
+
+          await db.update(yearlySavingsPlans)
+            .set({ monthlyProfitPaid: cumulativeMonthlyProfit.toFixed(2) })
+            .where(eq(yearlySavingsPlans.id, plan.id));
+
           await this.createNotification({
             type: "monthly_payout",
             title: "Monthly Profit Paid",
-            message: `Your yearly savings plan "${plan.planName}" has paid ₦${monthlyProfit.toFixed(2)} monthly profit (${completedMonths} months completed).`,
+            message: `Your yearly savings plan "${plan.planName}" has paid ₦${incrementalProfit.toFixed(2)} monthly profit (${completedMonths} months completed).`,
             memberId: plan.memberId,
             read: "false",
           });
@@ -2597,7 +2612,9 @@ export class DatabaseStorage implements IStorage {
       })
       .where(eq(dynamicSavingsPlans.id, planId));
 
-    // Create transaction for break payout
+    // Create transaction for break payout. skipWalletUpdate=true because this
+    // "payout" moves funds into the wallet (via addToWallet below), the opposite
+    // of a disbursement payout that createTransaction normally debits from it.
     const transaction = await this.createTransaction({
       memberId,
       planId: planId.toString(),
@@ -2606,7 +2623,7 @@ export class DatabaseStorage implements IStorage {
       status: "completed",
       date: new Date().toISOString(),
       notes: reason || `Plan broken with break fee of ₦${breakFeeAmount.toFixed(2)}`,
-    });
+    }, true);
 
     // Transfer amount minus break fee to wallet
     await this.addToWallet(memberId, payoutAmount);

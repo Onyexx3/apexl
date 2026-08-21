@@ -258,6 +258,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!result.success) {
         return res.status(400).json({ message: fromZodError(result.error).message });
       }
+      if (req.user!.role !== "admin") {
+        delete result.data.role;
+      }
       const staffMember = await storage.updateStaff(req.params.id, result.data);
       res.json(staffMember);
     } catch (error: any) {
@@ -504,7 +507,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/transactions/:id/complete-payout", requireAuth, async (req, res) => {
+  app.patch("/api/transactions/:id/complete-payout", requireRole("admin", "manager"), async (req, res) => {
     try {
       const { payoutDestination, payoutAccountNumber, payoutAccountName, payoutBankName } = req.body;
       
@@ -848,7 +851,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/admin/yearly-plans/pay-monthly-profits", requireAuth, async (req, res) => {
+  app.post("/admin/yearly-plans/pay-monthly-profits", requireRole("admin"), async (req, res) => {
     try {
       await storage.checkAndPayMonthlyProfits();
       res.json({ message: "Monthly profits paid successfully" });
@@ -1219,10 +1222,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/investments/:id/break", requireAuth, async (req, res) => {
+  app.patch("/api/investments/:id/break", requireRole("admin", "manager"), async (req, res) => {
     try {
+      const existingInvestment = await storage.getMemberInvestment(req.params.id);
+      if (!existingInvestment) {
+        return res.status(404).json({ message: "Investment not found" });
+      }
+
+      const branchId = filterByUserBranch(req);
+      if (branchId) {
+        const hasAccess = await storage.isMemberInBranch(existingInvestment.memberId, branchId);
+        if (!hasAccess) {
+          return res.status(403).json({ message: "Forbidden: You can only break investments for members in your branch" });
+        }
+      }
+
       const investment = await storage.breakMemberInvestment(req.params.id);
-      
+
       const member = await storage.getMember(investment.memberId);
       if (member) {
         await storage.createNotification({
@@ -1279,19 +1295,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: fromZodError(result.error).message });
       }
 
-      // Check if user has permission for this member
-      if (req.user!.role !== "admin") {
-        const member = await storage.getMember(result.data.memberId);
-        if (!member) {
-          return res.status(404).json({ message: "Member not found" });
-        }
-        
-        // Check branch access for managers and collectors
-        if (req.user!.role !== "admin" && req.user!.branchId !== member.staffId) {
-          const hasAccess = await storage.checkBranchAccess(req.user!.id, member.staffId);
-          if (!hasAccess) {
-            return res.status(403).json({ message: "You don't have permission to create plans for this member" });
-          }
+      const branchId = filterByUserBranch(req);
+      if (branchId) {
+        const hasAccess = await storage.isMemberInBranch(result.data.memberId, branchId);
+        if (!hasAccess) {
+          return res.status(403).json({ message: "You don't have permission to create plans for this member" });
         }
       }
 

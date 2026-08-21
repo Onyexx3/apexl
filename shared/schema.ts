@@ -174,6 +174,7 @@ export const yearlySavingsPlans = pgTable("yearly_savings_plans", {
   totalSaved: decimal("total_saved", { precision: 12, scale: 2 }).notNull().default("0"),
   profitRate: decimal("profit_rate", { precision: 5, scale: 2 }).notNull().default("5.00"),
   profitEarned: decimal("profit_earned", { precision: 12, scale: 2 }).notNull().default("0"),
+  monthlyProfitPaid: decimal("monthly_profit_paid", { precision: 12, scale: 2 }).notNull().default("0"),
   payoutStatus: text("payout_status").default("none"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
@@ -599,6 +600,7 @@ export const insertYearlySavingsPlanSchema = createInsertSchema(yearlySavingsPla
   completedDate: true,
   totalSaved: true,
   profitEarned: true,
+  monthlyProfitPaid: true,
   createdAt: true,
   status: true,
   payoutStatus: true,
@@ -693,6 +695,7 @@ export const insertInvestmentTypeSchema = createInsertSchema(investmentTypes).om
 export const insertMemberInvestmentSchema = createInsertSchema(memberInvestments).omit({
   id: true,
   createdAt: true,
+  interestRate: true,
   expectedReturn: true,
   maturityDate: true,
   breakFeeApplied: true,
@@ -704,7 +707,6 @@ export const insertMemberInvestmentSchema = createInsertSchema(memberInvestments
   amount: z.string().min(1, "Amount is required").refine((val) => !isNaN(Number(val)) && Number(val) > 0, {
     message: "Amount must be a positive number",
   }),
-  interestRate: z.string().optional(),
   status: z.enum(["active", "matured", "broken", "completed"]).default("active"),
   notes: z.string().optional(),
   assignedBy: z.string().optional(),

@@ -48,16 +48,20 @@ async function getStaffByUsername(username: string) {
 
 export function setupAuth(app: Express) {
   try {
+    if (!process.env.SESSION_SECRET) {
+      throw new Error("SESSION_SECRET must be set. Refusing to start with an insecure default.");
+    }
+
     const store = new PostgresSessionStore({ pool, createTableIfMissing: true });
     const sessionSettings: session.SessionOptions = {
-      secret: process.env.SESSION_SECRET || "apexl-savings-secret-key-2024",
+      secret: process.env.SESSION_SECRET,
       resave: false,
       saveUninitialized: false,
       store,
       cookie: {
         maxAge: 24 * 60 * 60 * 1000,
         httpOnly: true,
-        secure: false,
+        secure: process.env.NODE_ENV === "production",
         sameSite: "lax",
       },
     };
